@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Things</string>
+    <string name="title_activity_main">Things</string>
+    <string name="package_name">com.avicagan.things</string>
+    <string name="custom_url_scheme">com.avicagan.things</string>
+</resources>
