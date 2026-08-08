@@ -39,7 +39,7 @@ export function ChoreAddBar() {
             className="pointer-events-auto mx-3 overflow-hidden"
           >
             <div
-              className="flex flex-wrap items-center gap-1.5 rounded-2xl p-2"
+              className="flex flex-wrap items-center gap-2 rounded-2xl p-2.5"
               style={{
                 background: 'var(--dock-bg)',
                 backdropFilter: 'blur(20px)',
@@ -57,7 +57,7 @@ export function ChoreAddBar() {
                       setUseCustom(false)
                       setPreset(p)
                     }}
-                    className="rounded-full px-2.5 py-1.5 text-[12px] font-medium"
+                    className="rounded-full px-3 py-2 text-[13px] font-medium"
                     style={{
                       background: on ? 'var(--accent)' : 'var(--surface-2)',
                       color: on ? '#fff' : 'var(--text-dim)',
@@ -69,13 +69,13 @@ export function ChoreAddBar() {
               })}
 
               <div
-                className="flex items-center gap-1 rounded-full px-1.5 py-1"
+                className="flex items-center gap-1 rounded-full px-2 py-1.5"
                 style={{
                   background: useCustom ? 'var(--accent-soft)' : 'var(--surface-2)',
                   border: useCustom ? '1px solid var(--accent)' : '1px solid transparent',
                 }}
               >
-                <span className="pl-1 text-[12px]" style={{ color: 'var(--text-dim)' }}>
+                <span className="pl-1 text-[13px]" style={{ color: 'var(--text-dim)' }}>
                   every
                 </span>
                 <input
@@ -86,7 +86,7 @@ export function ChoreAddBar() {
                   }}
                   onFocus={() => setUseCustom(true)}
                   inputMode="numeric"
-                  className="w-8 bg-transparent text-center text-[12px] outline-none"
+                  className="w-9 bg-transparent text-center text-[13px] outline-none"
                 />
                 <select
                   value={custom.unit}
@@ -94,7 +94,7 @@ export function ChoreAddBar() {
                     setUseCustom(true)
                     setCustom({ ...custom, unit: e.target.value as RecurrenceUnit })
                   }}
-                  className="bg-transparent text-[12px] outline-none"
+                  className="bg-transparent text-[13px] outline-none"
                   style={{ color: 'var(--text)' }}
                 >
                   <option value="hours">hours</option>

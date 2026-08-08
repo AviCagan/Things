@@ -59,7 +59,7 @@ export function SettingsSheet() {
 
   return (
     <Sheet open={sheet.kind === 'settings'} onClose={closeSheet} title="Settings">
-      <div className="flex flex-col gap-5 pb-4">
+      <div className="flex flex-col gap-7 pb-6">
         <Group label={`${profile.display_name}'s look`}>
           <Row label="Theme" stacked>
             <div className="pt-2">
@@ -119,7 +119,7 @@ export function SettingsSheet() {
         <Group label="Feel">
           {!hasRealHaptics() && (
             <p
-              className="rounded-xl p-2.5 text-[12px]"
+              className="rounded-2xl p-3.5 text-[13px] leading-relaxed"
               style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
             >
               {isIOS()
@@ -166,7 +166,7 @@ export function SettingsSheet() {
               fire('tap')
               setShowHaptics((s) => !s)
             }}
-            className="flex items-center justify-between rounded-xl px-3 py-2.5"
+            className="flex items-center justify-between rounded-2xl px-4 py-3.5"
             style={{ background: 'var(--surface-2)' }}
           >
             <span className="text-[14px]">Test & fine-tune each buzz</span>
@@ -180,13 +180,13 @@ export function SettingsSheet() {
                 return (
                   <div
                     key={event}
-                    className="flex items-center gap-2 rounded-xl px-3 py-2"
+                    className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
                     style={{ background: 'var(--surface-2)' }}
                   >
                     <span className="flex-1 text-[13px]">{labelFor(event)}</span>
                     <button
                       onClick={() => fire(event)}
-                      className="rounded-full px-2.5 py-1 text-[12px] font-medium"
+                      className="rounded-full px-3 py-1.5 text-[12px] font-medium"
                       style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
                     >
                       Test
@@ -229,7 +229,7 @@ export function SettingsSheet() {
                 value={home}
                 onChange={(e) => setHome(e.target.value)}
                 placeholder="Street, city — or paste lat, lng"
-                className="min-w-0 flex-1 rounded-xl px-3 py-2 text-[13px] outline-none"
+                className="min-w-0 flex-1 rounded-xl px-3.5 py-3 text-[14px] outline-none"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
               />
               <button
@@ -242,7 +242,7 @@ export function SettingsSheet() {
                     home_lng: null,
                   })
                 }}
-                className="shrink-0 rounded-xl px-3 text-[13px] font-semibold text-white"
+                className="shrink-0 rounded-xl px-4 text-[14px] font-semibold text-white"
                 style={{ background: 'var(--accent)' }}
               >
                 Save
@@ -263,7 +263,7 @@ export function SettingsSheet() {
               closeSheet()
               void useProfile.getState().clearProfile()
             }}
-            className="flex items-center justify-between rounded-xl px-3 py-3"
+            className="flex items-center justify-between rounded-2xl px-4 py-4"
             style={{ background: 'var(--surface-2)' }}
           >
             <span className="text-[14px]">
@@ -318,7 +318,7 @@ function NotificationsGroup({
     <Group label="Notifications">
       {state === 'needs-install' && (
         <p
-          className="rounded-xl p-2.5 text-[12px]"
+          className="rounded-2xl p-3.5 text-[13px] leading-relaxed"
           style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
         >
           Add Things to your Home Screen first, then open it from that icon.
@@ -328,7 +328,7 @@ function NotificationsGroup({
 
       {state === 'unsupported' && (
         <p
-          className="rounded-xl p-2.5 text-[12px]"
+          className="rounded-2xl p-3.5 text-[13px] leading-relaxed"
           style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
         >
           This browser can't receive notifications.
@@ -337,7 +337,7 @@ function NotificationsGroup({
 
       {state === 'denied' && (
         <p
-          className="rounded-xl p-2.5 text-[12px]"
+          className="rounded-2xl p-3.5 text-[13px] leading-relaxed"
           style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
         >
           Notifications are blocked. Turn them back on in your device settings
@@ -349,7 +349,7 @@ function NotificationsGroup({
         <button
           onClick={turnOn}
           disabled={busy || state === 'granted'}
-          className="flex items-center justify-between rounded-xl px-3 py-3 disabled:opacity-70"
+          className="flex items-center justify-between rounded-2xl px-4 py-4 disabled:opacity-70"
           style={{
             background: state === 'granted' ? 'var(--surface-2)' : 'var(--accent)',
             color: state === 'granted' ? 'var(--text)' : '#fff',
@@ -410,9 +410,9 @@ function labelFor(event: HapticEventName): string {
 
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex flex-col gap-2.5">
       <h3
-        className="px-1 text-[12px] font-semibold uppercase tracking-wide"
+        className="px-1 pb-0.5 text-[12px] font-semibold uppercase tracking-wide"
         style={{ color: 'var(--text-faint)' }}
       >
         {label}
@@ -433,7 +433,7 @@ function Row({
 }) {
   return (
     <div
-      className={`rounded-xl px-3 py-2.5 ${stacked ? '' : 'flex items-center justify-between gap-3'}`}
+      className={`rounded-2xl px-4 py-3.5 ${stacked ? '' : 'flex items-center justify-between gap-3'}`}
       style={{ background: 'var(--surface-2)' }}
     >
       <span className="text-[14px]">{label}</span>
@@ -455,7 +455,7 @@ function Toggle({
 }) {
   return (
     <div
-      className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5"
+      className="flex items-center justify-between gap-4 rounded-2xl px-4 py-3.5"
       style={{ background: 'var(--surface-2)' }}
     >
       <div className="min-w-0 flex-1">
@@ -502,7 +502,7 @@ function Segmented({
 }) {
   return (
     <div
-      className="flex gap-1 rounded-full p-1"
+      className="flex gap-1 rounded-full p-1.5"
       style={{ background: 'var(--surface-3)' }}
     >
       {options.map((o) => {
@@ -514,7 +514,7 @@ function Segmented({
               fire('snap')
               onChange(o.key)
             }}
-            className="flex-1 whitespace-nowrap rounded-full px-2 py-1.5 text-[12px] font-medium transition-colors"
+            className="flex-1 whitespace-nowrap rounded-full px-3 py-2.5 text-[13px] font-medium transition-colors"
             style={{
               background: on ? 'var(--accent)' : 'transparent',
               color: on ? '#fff' : 'var(--text-dim)',

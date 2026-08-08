@@ -63,7 +63,7 @@ export function Sheet({
             </div>
 
             {title && (
-              <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-1">
+              <div className="flex shrink-0 items-center justify-between px-5 pb-4 pt-1">
                 <h2 className="text-[17px] font-semibold">{title}</h2>
                 <button
                   onClick={() => {
@@ -79,7 +79,7 @@ export function Sheet({
               </div>
             )}
 
-            <div className="scroll-y min-h-0 flex-1 px-5 pb-6">{children}</div>
+            <div className="scroll-y min-h-0 flex-1 px-5 pb-8">{children}</div>
           </motion.div>
         </>
       )}

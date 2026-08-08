@@ -31,7 +31,7 @@ export function ShoppingAddBar() {
             className="pointer-events-auto mx-3 overflow-hidden"
           >
             <div
-              className="flex flex-wrap items-center gap-1.5 rounded-2xl p-2"
+              className="flex flex-wrap items-center gap-2 rounded-2xl p-2.5"
               style={{
                 background: 'var(--dock-bg)',
                 backdropFilter: 'blur(20px)',
@@ -45,7 +45,7 @@ export function ShoppingAddBar() {
                   setStoreId(null)
                   setPicking(false)
                 }}
-                className="rounded-full px-2.5 py-1.5 text-[12px] font-medium"
+                className="rounded-full px-3 py-2 text-[13px] font-medium"
                 style={{
                   background: storeId === null ? 'var(--accent)' : 'var(--surface-2)',
                   color: storeId === null ? '#fff' : 'var(--text-dim)',
@@ -62,7 +62,7 @@ export function ShoppingAddBar() {
                     setStoreId(s.id)
                     setPicking(false)
                   }}
-                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium"
+                  className="flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium"
                   style={{
                     background: storeId === s.id ? s.color_hex : 'var(--surface-2)',
                     color: storeId === s.id ? '#fff' : 'var(--text-dim)',
@@ -83,7 +83,7 @@ export function ShoppingAddBar() {
                   setPicking(false)
                   openSheet({ kind: 'stores' })
                 }}
-                className="rounded-full px-2.5 py-1.5 text-[12px] font-medium"
+                className="rounded-full px-3 py-2 text-[13px] font-medium"
                 style={{ background: 'var(--surface-2)', color: 'var(--accent-text)' }}
               >
                 + New store

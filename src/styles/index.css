@@ -120,43 +120,53 @@
   --radius-card: var(--radius);
 }
 
-* {
-  -webkit-tap-highlight-color: transparent;
-}
+/*
+  These element resets MUST live in @layer base.
 
-html,
-body,
-#root {
-  height: 100%;
-}
+  Unlayered CSS wins over layered CSS in the cascade no matter the specificity,
+  and Tailwind ships its utilities inside a layer. Left unlayered, `button {
+  padding: 0 }` silently beat every `px-*`/`py-*` utility on every button in the
+  app — buttons collapsed to their text with no padding at all.
+*/
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family:
-    ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    system-ui, sans-serif;
-  font-size: calc(16px * var(--font-scale));
-  line-height: 1.45;
-  -webkit-font-smoothing: antialiased;
-  overscroll-behavior-y: none;
-  /* The app owns scrolling; the document never bounces. */
-  overflow: hidden;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-input,
-textarea,
-button {
-  font: inherit;
-  color: inherit;
-}
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family:
+      ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      system-ui, sans-serif;
+    font-size: calc(16px * var(--font-scale));
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+    /* The app owns scrolling; the document never bounces. */
+    overflow: hidden;
+  }
 
-button {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
+  input,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
 }
 
 /* Respect the OS setting *and* the in-app toggle. */

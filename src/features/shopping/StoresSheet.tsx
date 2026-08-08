@@ -52,12 +52,12 @@ export function StoresSheet() {
   return (
     <Sheet open={sheet.kind === 'stores'} onClose={closeSheet} title="Stores">
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2 rounded-2xl p-3" style={{ background: 'var(--surface-2)' }}>
+        <div className="flex flex-col gap-2.5 rounded-2xl p-3.5" style={{ background: 'var(--surface-2)' }}>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Store name"
-            className="rounded-xl px-3 py-2.5 outline-none"
+            className="rounded-xl px-3.5 py-3 outline-none"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           />
 
@@ -88,7 +88,7 @@ export function StoresSheet() {
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Address (optional — used for trip planning)"
-              className="rounded-xl px-3 py-2.5 outline-none"
+              className="rounded-xl px-3.5 py-3 outline-none"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
             />
           )}
@@ -115,7 +115,7 @@ export function StoresSheet() {
           <button
             onClick={add}
             disabled={!name.trim()}
-            className="mt-1 rounded-xl py-2.5 text-[14px] font-semibold text-white disabled:opacity-40"
+            className="mt-1 rounded-xl py-3 text-[15px] font-semibold text-white disabled:opacity-40"
             style={{ background: 'var(--accent)' }}
           >
             Add store
@@ -156,7 +156,7 @@ function StoreRow({ store }: { store: Store }) {
 
   return (
     <div
-      className="flex flex-col gap-2 rounded-2xl p-3"
+      className="flex flex-col gap-2.5 rounded-2xl p-3.5"
       style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
     >
       <div className="flex items-center gap-2.5">
