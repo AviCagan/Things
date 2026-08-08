@@ -14,6 +14,7 @@ import type {
   Desire,
 } from '@/data/types'
 import { fire } from '@/lib/haptics'
+import { scheduleCooldownReminder, cancelCooldownReminder } from '@/lib/notifications'
 
 type Collections = { [K in TableName]: TableMap[K][] }
 
@@ -250,7 +251,12 @@ export const dataActions = {
         useData.setState({ chores: snapshot })
         fire('warning')
         toast('Already done', { description: 'Someone beat you to it.' })
+        return
       }
+      // Native devices can schedule the "ready again" alert themselves, with
+      // exact timing and no server involved. Non-native falls back to the
+      // pg_cron sweep, since a browser can't schedule anything locally.
+      void scheduleCooldownReminder(result.row ?? optimisticRow)
     } catch (err) {
       useData.setState({ chores: snapshot })
       fire('error')
@@ -414,6 +420,8 @@ export const dataActions = {
   async remove(table: TableName, id: string) {
     const snapshot = useData.getState()[table] as unknown[]
     fire('delete')
+    // Don't leave a reminder scheduled for a chore that no longer exists.
+    if (table === 'chores') void cancelCooldownReminder(id)
     await optimistic(
       table,
       () =>

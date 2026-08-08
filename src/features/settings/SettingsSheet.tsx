@@ -7,11 +7,13 @@ import { useCurrentProfile, useProfile, useSettings, updateSettings } from '@/st
 import { fire, ALL_HAPTIC_EVENTS, hasRealHaptics } from '@/lib/haptics'
 import { unlockAudio } from '@/lib/sound'
 import { isIOS, isNative } from '@/lib/platform'
+import { enablePush, pushState, type PushState } from '@/lib/notifications'
 import type {
   HapticIntensity,
   NavApp,
   ThemeMode,
   HapticEventName,
+  NotifyEvent,
 } from '@/data/types'
 
 const ACCENTS = [
@@ -252,6 +254,8 @@ export function SettingsSheet() {
           </Row>
         </Group>
 
+        <NotificationsGroup profileId={id} settings={settings} onSet={set} />
+
         <Group label="Account">
           <button
             onClick={() => {
@@ -270,6 +274,118 @@ export function SettingsSheet() {
         </Group>
       </div>
     </Sheet>
+  )
+}
+
+const NOTIFY_EVENTS: { key: NotifyEvent; label: string; hint: string }[] = [
+  {
+    key: 'claim_complete',
+    label: 'Claims & completions',
+    hint: 'When something you added gets taken or finished',
+  },
+  {
+    key: 'cooldown_ready',
+    label: 'Chore ready again',
+    hint: 'When a recurring chore comes off cooldown',
+  },
+  { key: 'urgent_added', label: 'Urgent items', hint: 'Only the top urgency level' },
+  { key: 'any_added', label: 'Anything added', hint: 'Every new item on any list' },
+]
+
+function NotificationsGroup({
+  profileId,
+  settings,
+  onSet,
+}: {
+  profileId: string
+  settings: import('@/data/types').ProfileSettings
+  onSet: (patch: Partial<import('@/data/types').ProfileSettings>) => void
+}) {
+  const [state, setState] = useState<PushState>(() => pushState())
+  const [busy, setBusy] = useState(false)
+
+  async function turnOn() {
+    setBusy(true)
+    // Must run inside this click — a permission prompt outside a user gesture
+    // is refused, and on iOS a refusal sticks until the icon is reinstalled.
+    const next = await enablePush(profileId)
+    setState(next)
+    fire(next === 'granted' ? 'success' : 'warning')
+    setBusy(false)
+  }
+
+  return (
+    <Group label="Notifications">
+      {state === 'needs-install' && (
+        <p
+          className="rounded-xl p-2.5 text-[12px]"
+          style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
+        >
+          Add Things to your Home Screen first, then open it from that icon.
+          iOS only delivers notifications to installed web apps — not Safari tabs.
+        </p>
+      )}
+
+      {state === 'unsupported' && (
+        <p
+          className="rounded-xl p-2.5 text-[12px]"
+          style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
+        >
+          This browser can't receive notifications.
+        </p>
+      )}
+
+      {state === 'denied' && (
+        <p
+          className="rounded-xl p-2.5 text-[12px]"
+          style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
+        >
+          Notifications are blocked. Turn them back on in your device settings
+          for Things.
+        </p>
+      )}
+
+      {(state === 'default' || state === 'granted') && (
+        <button
+          onClick={turnOn}
+          disabled={busy || state === 'granted'}
+          className="flex items-center justify-between rounded-xl px-3 py-3 disabled:opacity-70"
+          style={{
+            background: state === 'granted' ? 'var(--surface-2)' : 'var(--accent)',
+            color: state === 'granted' ? 'var(--text)' : '#fff',
+          }}
+        >
+          <span className="flex items-center gap-2 text-[14px] font-medium">
+            <Icon name="bell" size={16} />
+            {state === 'granted'
+              ? 'Notifications are on'
+              : busy
+                ? 'Asking…'
+                : 'Turn on notifications'}
+          </span>
+          {state === 'granted' && <Icon name="check" size={16} strokeWidth={2.6} />}
+        </button>
+      )}
+
+      {NOTIFY_EVENTS.map((e) => (
+        <Toggle
+          key={e.key}
+          label={e.label}
+          hint={e.hint}
+          value={settings.notify_events[e.key] !== false}
+          onChange={(v) =>
+            onSet({ notify_events: { ...settings.notify_events, [e.key]: v } })
+          }
+        />
+      ))}
+
+      {settings.notify_events.any_added !== false && (
+        <p className="px-1 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+          "Anything added" already covers urgent items, so you'll still only get
+          one notification per item.
+        </p>
+      )}
+    </Group>
   )
 }
 

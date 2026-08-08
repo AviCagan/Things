@@ -17,7 +17,9 @@ export function Screen({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <header className="shrink-0 px-5 pb-2 pt-3 safe-top">
+      {/* pr-14 reserves the lane occupied by the floating settings button, so
+          per-tab actions can never slide underneath it. */}
+      <header className="shrink-0 pb-2 pl-5 pr-14 pt-3 safe-top">
         <div className="flex items-end justify-between gap-3">
           <h1 className="text-[27px] font-bold tracking-tight">
             {title}
