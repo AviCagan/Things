@@ -47,11 +47,17 @@ in one go, and it's safe to re-run.
 
 ## 3. Create the household account
 
-This is what the PIN unlocks. **Authentication → Users → Add user**:
+This is what the PIN unlocks. Go to **Authentication → Users** — or straight to
+`https://supabase.com/dashboard/project/<ref>/auth/users`, which is quicker than
+hunting for it — then **Add user → Create new user**:
 
 - Email: `household@things.local`
 - Password: `things-household-0926`
 - Tick **Auto Confirm User**
+
+> If you only see Policies, Sessions, Rate Limits and so on, you're in
+> Authentication's *Configuration* submenu. Use the back arrow at the top of
+> that panel; Users sits a level above it.
 
 The password is your PIN `0926` with a fixed prefix, because Supabase requires
 at least 6 characters. You type only the four digits; the app adds the rest. If
@@ -59,7 +65,9 @@ you ever change the PIN in the app, change this password to match.
 
 ### Then close the door behind you
 
-**Authentication → Providers → Email → turn OFF "Enable email signups".**
+**Authentication → Sign In / Providers → Email → turn OFF "Allow new users to
+sign up".** (Older dashboards call this Providers → Email → "Enable email
+signups" — same switch.)
 
 Don't skip this. The anon key is public — it ships inside the JavaScript that
 GitHub Pages serves to anyone. With signups enabled, someone could use that key
