@@ -11,6 +11,13 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    # Secrets are lifted to job-level env because the `secrets` context is NOT
+    # available in `if:` conditions — referencing it there makes the whole
+    # workflow file invalid, so no job runs at all. `env` is available in `if`.
+    # This also avoids interpolating JSON straight into a shell command.
+    env:
+      GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,9 +48,8 @@ jobs:
       # Firebase config for push notifications. Optional: without it the app
       # still builds and runs, it just can't receive push while closed.
       - name: Write google-services.json
-        if: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
-        run: |
-          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+        if: env.GOOGLE_SERVICES_JSON != ''
+        run: printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
 
       # A debug build is re-signed with a NEW debug keystore on every CI run,
       # and Android refuses to install an update whose signature changed — so
@@ -52,9 +58,9 @@ jobs:
       # upgrade in place forever.
       - name: Decode signing keystore
         id: keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+        if: env.ANDROID_KEYSTORE_B64 != ''
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > android/app/release.keystore
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > android/app/release.keystore
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Build signed release APK
