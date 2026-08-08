@@ -65,9 +65,15 @@ you ever change the PIN in the app, change this password to match.
 
 ### Then close the door behind you
 
-**Authentication → Sign In / Providers → Email → turn OFF "Allow new users to
-sign up".** (Older dashboards call this Providers → Email → "Enable email
+**Authentication → Sign In / Providers →** click into **Email → turn OFF "Allow
+new users to sign up"**, then save. (Older dashboards word this as "Enable email
 signups" — same switch.)
+
+> **Leave the Email provider itself Enabled.** On the providers list, Email
+> shows a green *Enabled* badge — do not turn that off. That badge controls
+> whether email/password login works at all, which is exactly how both phones
+> sign in; switching it off would stop the PIN working and break syncing.
+> The setting you want is inside the Email panel, one level down.
 
 Don't skip this. The anon key is public — it ships inside the JavaScript that
 GitHub Pages serves to anyone. With signups enabled, someone could use that key
