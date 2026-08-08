@@ -4,6 +4,7 @@ import { Screen, Section, EmptyState } from '@/components/shell/Screen'
 import { Icon } from '@/components/primitives/Icon'
 import { useData, dataActions } from '@/store/useData'
 import { fire } from '@/lib/haptics'
+import { formatPrice, parsePrice, priceToInput, sumPrices } from '@/lib/money'
 import { DESIRE_META, type Desire, type WishlistItem, type Profile } from '@/data/types'
 
 /**
@@ -28,8 +29,31 @@ export function WishlistTab() {
     }
   }, [wishes])
 
+  const total = sumPrices(active)
+  const priced = active.filter((w) => w.price_cents != null).length
+
   return (
-    <Screen title="Wishlist" count={active.length}>
+    <Screen
+      title="Wishlist"
+      count={active.length}
+      action={
+        total > 0 ? (
+          <div className="text-right">
+            <div
+              className="text-[15px] font-bold"
+              style={{ fontVariantNumeric: 'tabular-nums' }}
+            >
+              {formatPrice(total)}
+            </div>
+            <div className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+              {priced === active.length
+                ? 'all in'
+                : `${priced} of ${active.length} priced`}
+            </div>
+          </div>
+        ) : undefined
+      }
+    >
       {active.length === 0 && purchased.length === 0 ? (
         <EmptyState
           icon={<Icon name="star" size={44} strokeWidth={1.5} />}
@@ -63,6 +87,67 @@ const DESIRE_COLOR: Record<Desire, string> = {
   3: 'var(--accent)',
   4: '#f5a524',
   5: '#ff4d4d',
+}
+
+/**
+ * Price, edited in place. Tap it and it becomes an input — no sheet, no edit
+ * mode, matching how urgency and desire are changed everywhere else.
+ */
+function PriceTag({ wish }: { wish: WishlistItem }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(() => priceToInput(wish.price_cents))
+
+  function save() {
+    setEditing(false)
+    const cents = draft.trim() ? parsePrice(draft) : null
+    if (cents === wish.price_cents) return
+    fire('toggleOn')
+    void dataActions.patchRow('wishlist_items', wish.id, { price_cents: cents })
+  }
+
+  if (editing) {
+    return (
+      <div className="mt-1 flex items-center gap-1">
+        <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>$</span>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save()
+            if (e.key === 'Escape') {
+              setDraft(priceToInput(wish.price_cents))
+              setEditing(false)
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          inputMode="decimal"
+          placeholder="0.00"
+          className="w-16 rounded-md px-1 text-[12px] outline-none"
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--accent-muted)' }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation()
+        fire('tap')
+        setDraft(priceToInput(wish.price_cents))
+        setEditing(true)
+      }}
+      className="mt-0.5 text-[12px]"
+      style={{
+        color: wish.price_cents == null ? 'var(--text-faint)' : 'var(--text-dim)',
+        opacity: wish.price_cents == null ? 0.75 : 1,
+      }}
+    >
+      {wish.price_cents == null ? 'add price' : formatPrice(wish.price_cents)}
+    </button>
+  )
 }
 
 function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] }) {
@@ -101,17 +186,14 @@ function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] 
       />
 
       <div className="relative z-10">
+        {/* pr-5 keeps long titles clear of the delete button in the corner. */}
         <div
-          className="text-[14px] font-semibold leading-snug"
+          className="pr-5 text-[14px] font-semibold leading-snug"
           style={{ textDecoration: wish.is_purchased ? 'line-through' : 'none' }}
         >
           {wish.title}
         </div>
-        {wish.price_cents != null && (
-          <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-dim)' }}>
-            ${(wish.price_cents / 100).toFixed(2)}
-          </div>
-        )}
+        <PriceTag wish={wish} />
       </div>
 
       <div className="relative z-10 flex items-end justify-between gap-2">
