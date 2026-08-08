@@ -34,7 +34,7 @@ export function Screen({
       </header>
 
       {/* Bottom padding clears the quick-add bar and the floating dock. */}
-      <div className="scroll-y min-h-0 flex-1 px-3 pb-[190px]">{children}</div>
+      <div className="scroll-y min-h-0 flex-1 px-3 pb-[205px]">{children}</div>
     </div>
   )
 }

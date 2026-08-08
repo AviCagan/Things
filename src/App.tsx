@@ -150,7 +150,8 @@ export default function App() {
         </button>
       </div>
 
-      <div className="pointer-events-none fixed inset-x-0 z-50 safe-bottom" style={{ bottom: 78 }}>
+      {/* Sits clear of the dock: 6px padding + 54px slot + 6px + 10px margin. */}
+      <div className="pointer-events-none fixed inset-x-0 z-50 safe-bottom" style={{ bottom: 86 }}>
         {tab === 'todos' && (
           <QuickAdd
             placeholder="Add a to-do…"

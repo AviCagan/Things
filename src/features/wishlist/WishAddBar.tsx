@@ -165,14 +165,20 @@ function WishBar({
         }}
         type="button"
         aria-label={`Want level: ${DESIRE_META[desire].label}. Tap to change.`}
-        className="flex h-8 shrink-0 items-end gap-[3px] rounded-full px-2.5 py-2"
-        style={{ background: 'var(--surface-2)' }}
+        className="flex h-8 shrink-0 items-center gap-[3px] rounded-full px-2.5"
+        style={{
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border)',
+        }}
       >
         {([1, 2, 3, 4, 5] as Desire[]).map((n) => (
           <motion.span
             key={n}
-            animate={{ height: 4 + n * 2 }}
-            className="w-[3px] rounded-full"
+            // Centred rather than bottom-aligned: inside a small pill a
+            // baseline-anchored meter reads as misaligned rather than as a scale.
+            animate={{ height: 5 + n * 2 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+            className="block w-[3px] shrink-0 rounded-full"
             style={{
               background: n <= desire ? DESIRE_COLOR[desire] : 'var(--surface-3)',
             }}
