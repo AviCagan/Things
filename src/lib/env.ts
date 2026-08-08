@@ -11,7 +11,19 @@
 const raw = import.meta.env as Record<string, string | undefined>
 
 export const SUPABASE_URL = raw.VITE_SUPABASE_URL?.trim() ?? ''
-export const SUPABASE_ANON_KEY = raw.VITE_SUPABASE_ANON_KEY?.trim() ?? ''
+
+/**
+ * The browser-safe key.
+ *
+ * Supabase now issues `sb_publishable_…` keys and calls the old JWT-style ones
+ * "legacy anon". Both work identically here, so either env name is accepted —
+ * whichever the dashboard happened to show when you set it up.
+ */
+export const SUPABASE_ANON_KEY =
+  raw.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+  raw.VITE_SUPABASE_ANON_KEY?.trim() ||
+  ''
+
 export const VAPID_PUBLIC_KEY = raw.VITE_VAPID_PUBLIC_KEY?.trim() ?? ''
 
 /** The shared household account the PIN unlocks. */

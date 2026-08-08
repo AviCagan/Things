@@ -12,11 +12,29 @@ Roughly 15 minutes, once.
 
 1. Sign up at [supabase.com](https://supabase.com) (free tier is plenty).
 2. New project → pick any name and a strong database password → wait ~2 min.
-3. **Settings → API** — copy the **Project URL** and the **anon public** key.
+3. Collect two values:
+
+   - **Project URL** — read it off your browser's address bar. The dashboard
+     sits at `supabase.com/dashboard/project/<ref>`, and your URL is
+     `https://<ref>.supabase.co`. Also shown under **Settings → Data API**.
+   - **Publishable key** — **Settings → API Keys**, the `sb_publishable_…`
+     value. This is the browser-safe key and the modern replacement for what
+     older docs call the "anon public" key; if your dashboard still shows a
+     **Legacy anon** tab instead, that key works identically.
+
+> The `sb_secret_…` key on that same page must never go into the app — it
+> bypasses row-level security entirely. It's only needed for the optional
+> notification sender in the last section.
 
 ## 2. Run the SQL
 
-Open **SQL Editor** and run these in order, each as its own query:
+Open **SQL Editor**, paste in **`setup.sql`**, and hit Run. That's everything
+in one go, and it's safe to re-run.
+
+<details>
+<summary>Or run the four files individually</summary>
+
+`setup.sql` is just these concatenated; they're kept separate for readability.
 
 | File | What it does |
 |---|---|
@@ -24,6 +42,8 @@ Open **SQL Editor** and run these in order, each as its own query:
 | `002_rls.sql` | Locks the database to authenticated sessions only |
 | `003_realtime.sql` | Turns on live sync (and the `REPLICA IDENTITY FULL` that makes deletes sync) |
 | `004_seed.sql` | Creates the Avi and Jackie profiles |
+
+</details>
 
 ## 3. Create the household account
 
@@ -56,9 +76,12 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 
 | Secret | Value |
 |---|---|
-| `VITE_SUPABASE_URL` | Project URL from step 1 |
-| `VITE_SUPABASE_ANON_KEY` | anon public key from step 1 |
+| `VITE_SUPABASE_URL` | Project URL from step 1, e.g. `https://abcdefgh.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | the `sb_publishable_…` key from step 1 |
 | `VITE_HOUSEHOLD_EMAIL` | `household@things.local` |
+
+The key secret can also be named `VITE_SUPABASE_PUBLISHABLE_KEY` if that reads
+better to you — the app accepts either.
 
 Then **Settings → Pages → Source: GitHub Actions**. Push to the branch and the
 site deploys itself.
