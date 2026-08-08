@@ -22,9 +22,11 @@
   --accent-strong: color-mix(in oklab, var(--accent) 82%, white 18%);
   --accent-text: color-mix(in oklab, var(--accent) 88%, white 12%);
 
-  /* Urgency — semantic, theme-independent hues. */
-  --u-chill: #64748b;
-  --u-normal: var(--accent);
+  /* Urgency reads as a traffic light: green is fine, red needs you now.
+     Deliberately independent of the accent, so recolouring the app never
+     makes "normal" look urgent. */
+  --u-chill: #2bb673;
+  --u-normal: #7ec13f;
   --u-high: #f5a524;
   --u-urgent: #ff4d4d;
 

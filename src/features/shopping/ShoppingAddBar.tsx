@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { QuickAdd } from '@/components/shell/QuickAdd'
 import { Icon } from '@/components/primitives/Icon'
@@ -14,11 +14,25 @@ export function ShoppingAddBar() {
   const openSheet = useUI((s) => s.openSheet)
   const [storeId, setStoreId] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
+  const barRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Keep the keyboard up when switching store.
+   *
+   * A tap on a chip would otherwise blur the input and dismiss the keyboard,
+   * which breaks the rhythm of adding several items in a row. Suppressing the
+   * default on pointerdown stops the button taking focus at all.
+   */
+  const keepFocus = (e: React.PointerEvent | React.MouseEvent) => e.preventDefault()
+  const refocus = () => {
+    const input = barRef.current?.querySelector('input')
+    input?.focus()
+  }
 
   const store = stores.find((s) => s.id === storeId) ?? null
 
   return (
-    <div className="flex flex-col gap-2">
+    <div ref={barRef} className="flex flex-col gap-2">
       <AnimatePresence>
         {picking && (
           <motion.div
@@ -40,10 +54,12 @@ export function ShoppingAddBar() {
               }}
             >
               <button
+                onPointerDown={keepFocus}
                 onClick={() => {
                   fire('snap')
                   setStoreId(null)
                   setPicking(false)
+                  refocus()
                 }}
                 className="rounded-full px-3 py-2 text-[13px] font-medium"
                 style={{
@@ -57,10 +73,12 @@ export function ShoppingAddBar() {
               {stores.map((s) => (
                 <button
                   key={s.id}
+                  onPointerDown={keepFocus}
                   onClick={() => {
                     fire('snap')
                     setStoreId(s.id)
                     setPicking(false)
+                    refocus()
                   }}
                   className="flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium"
                   style={{
@@ -100,6 +118,7 @@ export function ShoppingAddBar() {
         }
         leading={
           <button
+            onPointerDown={keepFocus}
             onClick={() => {
               fire('tap')
               setPicking((p) => !p)

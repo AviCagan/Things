@@ -24,7 +24,7 @@ export const DESIRE_META: Record<Desire, { label: string }> = {
   5: { label: 'Must have' },
 }
 
-export type RecurrenceUnit = 'hours' | 'days' | 'weeks' | 'months'
+export type RecurrenceUnit = 'hours' | 'days' | 'weeks' | 'months' | 'years'
 export type ThemeMode = 'system' | 'light' | 'dark' | 'oled'
 export type HapticIntensity = 'off' | 'subtle' | 'normal' | 'heavy'
 export type NavApp = 'google' | 'waze' | 'apple'
@@ -34,6 +34,11 @@ export interface Profile {
   slug: ProfileSlug
   display_name: string
   avatar_emoji: string
+  /**
+   * Optional photo, held as a data URI. Two people do not justify configuring
+   * a storage bucket, and the image is downscaled hard before it is saved.
+   */
+  avatar_url: string | null
   color_hex: string
   created_at: string
 }

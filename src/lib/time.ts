@@ -56,6 +56,8 @@ export const RECURRENCE_PRESETS: {
   { label: 'Weekly', count: 1, unit: 'weeks' },
   { label: 'Every 2 weeks', count: 2, unit: 'weeks' },
   { label: 'Monthly', count: 1, unit: 'months' },
+  { label: 'Every 3 months', count: 3, unit: 'months' },
+  { label: 'Yearly', count: 1, unit: 'years' },
 ]
 
 export function describeRecurrence(

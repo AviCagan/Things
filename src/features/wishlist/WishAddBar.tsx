@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Icon } from '@/components/primitives/Icon'
-import { dataActions } from '@/store/useData'
+import { useData, dataActions } from '@/store/useData'
 import { useProfile } from '@/store/useProfile'
+import { Avatar } from '@/components/primitives/ClaimChip'
 import { fire } from '@/lib/haptics'
 import { parsePrice } from '@/lib/money'
 import { DESIRE_META, type Desire } from '@/data/types'
@@ -21,6 +22,9 @@ const DESIRE_COLOR: Record<Desire, string> = {
  */
 export function WishAddBar() {
   const profileId = useProfile((s) => s.profileId)
+  const profiles = useData((s) => s.profiles)
+  // Who the wish is for: you, then your partner, then both. null = both.
+  const [owner, setOwner] = useState<string | null>(profileId)
   const [value, setValue] = useState('')
   const [price, setPrice] = useState('')
   const [showPrice, setShowPrice] = useState(false)
@@ -37,7 +41,7 @@ export function WishAddBar() {
     void dataActions.addWish(
       isUrl ? title.replace(/^https?:\/\/(www\.)?/i, '').split('/')[0] : title,
       desire,
-      profileId,
+      owner,
       {
         ...(isUrl ? { url: title } : {}),
         ...(price.trim() ? { price_cents: parsePrice(price) } : {}),
@@ -101,6 +105,18 @@ export function WishAddBar() {
       </AnimatePresence>
 
       <WishBar
+        owner={owner}
+        profiles={profiles}
+        cycleOwner={() => {
+          fire('snap')
+          const order: (string | null)[] = [
+            profileId,
+            ...profiles.filter((p) => p.id !== profileId).map((p) => p.id),
+            null,
+          ]
+          const i = order.indexOf(owner)
+          setOwner(order[(i + 1) % order.length])
+        }}
         value={value}
         setValue={setValue}
         desire={desire}
@@ -121,6 +137,9 @@ export function WishAddBar() {
 }
 
 function WishBar({
+  owner,
+  profiles,
+  cycleOwner,
   value,
   setValue,
   desire,
@@ -133,6 +152,9 @@ function WishBar({
   togglePrice,
   hasPrice,
 }: {
+  owner: string | null
+  profiles: import('@/data/types').Profile[]
+  cycleOwner: () => void
   value: string
   setValue: (v: string) => void
   desire: Desire
@@ -203,6 +225,8 @@ function WishBar({
         className="min-w-0 flex-1 bg-transparent px-1 outline-none placeholder:text-[var(--text-faint)]"
       />
 
+      <OwnerButton owner={owner} profiles={profiles} onClick={cycleOwner} />
+
       <button
         onClick={togglePrice}
         type="button"
@@ -229,5 +253,54 @@ function WishBar({
         <Icon name="plus" size={19} strokeWidth={2.6} />
       </motion.button>
     </div>
+  )
+}
+
+
+/** Who this wish is for — tap to cycle you → them → both. */
+function OwnerButton({
+  owner,
+  profiles,
+  onClick,
+}: {
+  owner: string | null
+  profiles: import('@/data/types').Profile[]
+  onClick: () => void
+}) {
+  const p = profiles.find((x) => x.id === owner) ?? null
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={p ? `For ${p.display_name}. Tap to change.` : 'For both of you. Tap to change.'}
+      className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full text-[13px]"
+      style={{
+        background: p
+          ? `color-mix(in oklab, ${p.color_hex} 26%, transparent)`
+          : 'var(--surface-2)',
+        border: `1.5px solid ${p ? p.color_hex : 'var(--border-strong)'}`,
+        color: 'var(--text-dim)',
+      }}
+    >
+      {p ? (
+        <Avatar profile={p} size={30} />
+      ) : (
+        // Both of you: two overlapping dots rather than a third avatar.
+        <span className="flex items-center">
+          {profiles.slice(0, 2).map((x, i) => (
+            <span
+              key={x.id}
+              className="block h-2.5 w-2.5 rounded-full"
+              style={{
+                background: x.color_hex,
+                marginLeft: i === 0 ? 0 : -4,
+                border: '1px solid var(--surface-2)',
+              }}
+            />
+          ))}
+        </span>
+      )}
+    </button>
   )
 }

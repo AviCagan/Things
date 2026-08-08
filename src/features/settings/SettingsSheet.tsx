@@ -8,6 +8,10 @@ import { fire, ALL_HAPTIC_EVENTS, hasRealHaptics } from '@/lib/haptics'
 import { unlockAudio } from '@/lib/sound'
 import { isIOS, isNative } from '@/lib/platform'
 import { enablePush, pushState, type PushState } from '@/lib/notifications'
+import { fileToAvatarDataUrl, dataUrlBytes } from '@/lib/image'
+import { Avatar } from '@/components/primitives/ClaimChip'
+import { toast } from 'sonner'
+import type { Profile } from '@/data/types'
 import type {
   HapticIntensity,
   NavApp,
@@ -61,6 +65,8 @@ export function SettingsSheet() {
     <Sheet open={sheet.kind === 'settings'} onClose={closeSheet} title="Settings">
       <div className="flex flex-col gap-7 pb-6">
         <Group label={`${profile.display_name}'s look`}>
+          <AvatarRow profile={profile} />
+
           <Row label="Theme" stacked>
             <div className="pt-2">
               <Segmented
@@ -386,6 +392,83 @@ function NotificationsGroup({
         </p>
       )}
     </Group>
+  )
+}
+
+/** Profile photo: pick, downscale, store. Emoji stays as the fallback. */
+function AvatarRow({ profile }: { profile: Profile }) {
+  const [busy, setBusy] = useState(false)
+
+  async function pick(file: File | undefined) {
+    if (!file) return
+    setBusy(true)
+    try {
+      const dataUrl = await fileToAvatarDataUrl(file)
+      if (dataUrlBytes(dataUrl) > 400_000) {
+        throw new Error('That image is too large even after resizing')
+      }
+      await dataActions.patchRow('profiles', profile.id, { avatar_url: dataUrl })
+      fire('success')
+    } catch (err) {
+      fire('error')
+      toast.error(err instanceof Error ? err.message : "Couldn't use that photo")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-4 rounded-2xl px-4 py-3.5"
+      style={{ background: 'var(--surface-2)' }}
+    >
+      <span
+        className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full text-[26px]"
+        style={{
+          background: `color-mix(in oklab, ${profile.color_hex} 24%, transparent)`,
+          border: `2px solid ${profile.color_hex}`,
+        }}
+      >
+        <Avatar profile={profile} size={56} />
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-medium">Your photo</div>
+        <div className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
+          {profile.avatar_url ? 'Shown wherever you appear' : 'Using your emoji for now'}
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        {profile.avatar_url && (
+          <button
+            onClick={() => {
+              fire('delete')
+              void dataActions.patchRow('profiles', profile.id, { avatar_url: null })
+            }}
+            className="rounded-full px-3 py-2 text-[12px] font-medium"
+            style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
+          >
+            Remove
+          </button>
+        )}
+        <label
+          className="cursor-pointer rounded-full px-3 py-2 text-[12px] font-semibold text-white"
+          style={{ background: 'var(--accent)', opacity: busy ? 0.6 : 1 }}
+        >
+          {busy ? 'Saving…' : profile.avatar_url ? 'Change' : 'Add'}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              void pick(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
+        </label>
+      </div>
+    </div>
   )
 }
 

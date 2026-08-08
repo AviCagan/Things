@@ -7,11 +7,14 @@ import { fire } from '@/lib/haptics'
 export function Screen({
   title,
   count,
+  subtitle,
   action,
   children,
 }: {
   title: string
   count?: number
+  /** Sits under the title. Keeps wide values clear of the settings button. */
+  subtitle?: ReactNode
   action?: ReactNode
   children: ReactNode
 }) {
@@ -31,6 +34,7 @@ export function Screen({
           </h1>
           {action}
         </div>
+        {subtitle && <div className="pt-0.5">{subtitle}</div>}
       </header>
 
       {/* Bottom padding clears the quick-add bar and the floating dock. */}

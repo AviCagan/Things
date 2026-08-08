@@ -38,37 +38,58 @@ async function goLive() {
   await useData.getState().setAdapter(adapter)
 }
 
+/**
+ * Boot is an explicit state machine rather than a set of independent flags.
+ *
+ * The blank screen after entering the PIN came from exactly that: unlocking
+ * flipped `locked` to false while `ready` was still true from a local-adapter
+ * init, so the profile screen rendered against an empty local database — no
+ * profiles, nothing to tap. And any failure while swapping in the real adapter
+ * left `ready` false forever, which is why only a restart recovered it.
+ */
+type Boot = 'loading' | 'locked' | 'ready' | 'error'
+
 export default function App() {
-  const ready = useData((s) => s.ready)
   const profiles = useData((s) => s.profiles)
   const profileId = useProfile((s) => s.profileId)
-  const hydrated = useProfile((s) => s.hydrated)
   const settings = useSettings()
   const tab = useUI((s) => s.tab)
   const openSheet = useUI((s) => s.openSheet)
-  const [locked, setLocked] = useState(false)
+  const [boot, setBoot] = useState<Boot>('loading')
+  const [bootError, setBootError] = useState<string | null>(null)
 
-  useEffect(() => {
-    void (async () => {
+  async function start() {
+    setBoot('loading')
+    setBootError(null)
+    try {
       await useProfile.getState().hydrate()
 
-      // Configured but no session yet → the PIN is owed once on this device.
-      if (isConfigured() && !(await hasSession())) {
-        setLocked(true)
+      if (!isConfigured()) {
+        // No credentials: the local adapter IS the backend, not a stub.
         await useData.getState().init()
-        return
-      }
-
-      if (isConfigured()) {
-        await goLive()
         await ensureSeeded()
+        setBoot('ready')
         return
       }
 
-      // No credentials: the local adapter IS the backend, not a stub.
-      await useData.getState().init()
+      // Configured but no session yet → the PIN is owed once on this device.
+      if (!(await hasSession())) {
+        setBoot('locked')
+        return
+      }
+
+      await goLive()
       await ensureSeeded()
-    })()
+      setBoot('ready')
+    } catch (err) {
+      console.error('[boot]', err)
+      setBootError(err instanceof Error ? err.message : String(err))
+      setBoot('error')
+    }
+  }
+
+  useEffect(() => {
+    void start()
   }, [])
 
   // Theme, accent, font scale and haptic config are CSS variables + module
@@ -77,13 +98,22 @@ export default function App() {
     applySettings(settings)
   }, [settings])
 
-  if (locked) {
+  if (boot === 'locked') {
     return (
       <>
         <PinGate
-          onUnlocked={() => {
-            setLocked(false)
-            void goLive().then(ensureSeeded)
+          // Only leave the gate once the real data is actually loaded, so the
+          // profile screen never renders against an empty database.
+          onUnlocked={async () => {
+            try {
+              await goLive()
+              await ensureSeeded()
+              setBoot('ready')
+            } catch (err) {
+              console.error('[unlock]', err)
+              setBootError(err instanceof Error ? err.message : String(err))
+              setBoot('error')
+            }
           }}
         />
         <PulseLayer />
@@ -91,7 +121,25 @@ export default function App() {
     )
   }
 
-  if (!hydrated || !ready) {
+  if (boot === 'error') {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+        <h1 className="text-[20px] font-bold">Couldn't load your lists</h1>
+        <p className="text-[14px]" style={{ color: 'var(--text-dim)' }}>
+          {bootError ?? 'Something went wrong connecting.'}
+        </p>
+        <button
+          onClick={() => void start()}
+          className="rounded-full px-5 py-3 text-[15px] font-semibold text-white"
+          style={{ background: 'var(--accent)' }}
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
+
+  if (boot === 'loading') {
     return <div className="grid h-full place-items-center" style={{ color: 'var(--text-faint)' }} />
   }
 

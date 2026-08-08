@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Screen, Section, EmptyState } from '@/components/shell/Screen'
 import { Icon } from '@/components/primitives/Icon'
 import { useData, dataActions } from '@/store/useData'
+import { useUI, type WishSort } from '@/store/useUI'
+import { Avatar } from '@/components/primitives/ClaimChip'
 import { fire } from '@/lib/haptics'
 import { formatPrice, parsePrice, priceToInput, sumPrices } from '@/lib/money'
 import { DESIRE_META, type Desire, type WishlistItem, type Profile } from '@/data/types'
@@ -17,17 +19,35 @@ export function WishlistTab() {
   const wishes = useData((s) => s.wishlist_items)
   const profiles = useData((s) => s.profiles)
 
+  const wishSort = useUI((s) => s.wishSort)
+  const wishDesc = useUI((s) => s.wishDesc)
+  const wishOwner = useUI((s) => s.wishOwner)
+
   const { active, purchased } = useMemo(() => {
-    const sorted = [...wishes].sort((a, b) =>
-      a.desire_level !== b.desire_level
-        ? b.desire_level - a.desire_level
-        : b.sort_order - a.sort_order,
-    )
+    const matchesOwner = (w: WishlistItem) => {
+      if (wishOwner === null) return true
+      if (wishOwner === 'shared') return w.owner_id === null
+      return w.owner_id === wishOwner
+    }
+
+    const key = (w: WishlistItem) => {
+      if (wishSort === 'price') return w.price_cents ?? -1
+      if (wishSort === 'added') return w.sort_order
+      return w.desire_level
+    }
+
+    const sorted = [...wishes].filter(matchesOwner).sort((a, b) => {
+      const diff = key(a) - key(b)
+      // Ties fall back to newest first, so the order never looks arbitrary.
+      if (diff !== 0) return wishDesc ? -diff : diff
+      return b.sort_order - a.sort_order
+    })
+
     return {
       active: sorted.filter((w) => !w.is_purchased),
       purchased: sorted.filter((w) => w.is_purchased),
     }
-  }, [wishes])
+  }, [wishes, wishSort, wishDesc, wishOwner])
 
   const total = sumPrices(active)
   const priced = active.filter((w) => w.price_cents != null).length
@@ -36,24 +56,18 @@ export function WishlistTab() {
     <Screen
       title="Wishlist"
       count={active.length}
-      action={
+      subtitle={
         total > 0 ? (
-          <div className="text-right">
-            <div
-              className="text-[15px] font-bold"
-              style={{ fontVariantNumeric: 'tabular-nums' }}
-            >
+          <span className="text-[13px]" style={{ color: 'var(--text-dim)' }}>
+            <span className="font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>
               {formatPrice(total)}
-            </div>
-            <div className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-              {priced === active.length
-                ? 'all in'
-                : `${priced} of ${active.length} priced`}
-            </div>
-          </div>
+            </span>
+            {priced === active.length ? ' total' : ` · ${priced} of ${active.length} priced`}
+          </span>
         ) : undefined
       }
     >
+      <FilterBar profiles={profiles} />
       {active.length === 0 && purchased.length === 0 ? (
         <EmptyState
           icon={<Icon name="star" size={44} strokeWidth={1.5} />}
@@ -78,6 +92,121 @@ export function WishlistTab() {
         </div>
       </Section>
     </Screen>
+  )
+}
+
+const SORTS: { key: WishSort; label: string; high: string; low: string }[] = [
+  { key: 'desire', label: 'Wanted', high: 'most wanted', low: 'least wanted' },
+  { key: 'price', label: 'Price', high: 'priciest', low: 'cheapest' },
+  { key: 'added', label: 'Added', high: 'newest', low: 'oldest' },
+]
+
+/** Sort, direction and whose-wish filter. */
+function FilterBar({ profiles }: { profiles: Profile[] }) {
+  const sort = useUI((s) => s.wishSort)
+  const desc = useUI((s) => s.wishDesc)
+  const owner = useUI((s) => s.wishOwner)
+  const setSort = useUI((s) => s.setWishSort)
+  const toggleDir = useUI((s) => s.toggleWishDir)
+  const setOwner = useUI((s) => s.setWishOwner)
+
+  const current = SORTS.find((s) => s.key === sort)!
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-1 pb-3">
+      {SORTS.map((s) => {
+        const on = s.key === sort
+        return (
+          <button
+            key={s.key}
+            onClick={() => {
+              fire('snap')
+              // Tapping the active sort flips direction rather than doing
+              // nothing — one control, both jobs.
+              if (on) toggleDir()
+              else setSort(s.key)
+            }}
+            className="flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-medium"
+            style={{
+              background: on ? 'var(--accent)' : 'var(--surface-2)',
+              color: on ? '#fff' : 'var(--text-dim)',
+            }}
+          >
+            {s.label}
+            {on && (
+              <motion.span animate={{ rotate: desc ? 0 : 180 }} className="leading-none">
+                ↓
+              </motion.span>
+            )}
+          </button>
+        )
+      })}
+
+      <span className="mx-0.5 h-4 w-px" style={{ background: 'var(--border-strong)' }} />
+
+      <OwnerPill active={owner === null} onClick={() => setOwner(null)} label="All" />
+      {profiles.map((p) => (
+        <OwnerPill
+          key={p.id}
+          active={owner === p.id}
+          onClick={() => setOwner(p.id)}
+          color={p.color_hex}
+          avatar={<Avatar profile={p} size={16} />}
+          label={p.display_name}
+        />
+      ))}
+      <OwnerPill
+        active={owner === 'shared'}
+        onClick={() => setOwner('shared')}
+        label="Both"
+      />
+
+      {(sort !== 'desire' || !desc || owner !== null) && (
+        <span className="pl-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
+          {desc ? current.high : current.low}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function OwnerPill({
+  active,
+  onClick,
+  label,
+  color,
+  avatar,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  color?: string
+  avatar?: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={() => {
+        fire('snap')
+        onClick()
+      }}
+      className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-medium"
+      style={{
+        background: active
+          ? color
+            ? `color-mix(in oklab, ${color} 30%, transparent)`
+            : 'var(--accent-soft)'
+          : 'var(--surface-2)',
+        border: `1px solid ${active ? (color ?? 'var(--accent-muted)') : 'transparent'}`,
+        color: active ? 'var(--text)' : 'var(--text-dim)',
+      }}
+    >
+      {avatar && (
+        <span className="grid h-4 w-4 place-items-center overflow-hidden rounded-full text-[10px]">
+          {avatar}
+        </span>
+      )}
+      {label}
+    </button>
   )
 }
 

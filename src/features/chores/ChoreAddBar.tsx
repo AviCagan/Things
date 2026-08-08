@@ -101,6 +101,7 @@ export function ChoreAddBar() {
                   <option value="days">days</option>
                   <option value="weeks">weeks</option>
                   <option value="months">months</option>
+                  <option value="years">years</option>
                 </select>
               </div>
             </div>

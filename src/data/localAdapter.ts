@@ -158,6 +158,9 @@ export function computeNextDue(chore: Chore): string | null {
       // raw seconds. "Monthly" must mean the same day next month, not +30d.
       d.setMonth(d.getMonth() + n)
       break
+    case 'years':
+      d.setFullYear(d.getFullYear() + n)
+      break
   }
   return d.toISOString()
 }

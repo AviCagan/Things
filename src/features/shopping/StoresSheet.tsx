@@ -93,7 +93,24 @@ export function StoresSheet() {
             />
           )}
 
-          <div className="flex items-center gap-2 px-1 pt-1">
+          <div className="flex flex-wrap items-center gap-2 px-1 pt-1">
+            {/* Any colour, not just the presets. */}
+            <label
+              className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-full"
+              style={{
+                background:
+                  'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
+                border: '2px solid var(--border-strong)',
+              }}
+              aria-label="Pick any colour"
+            >
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="h-0 w-0 opacity-0"
+              />
+            </label>
             {PALETTE.map((c) => (
               <button
                 key={c}
@@ -102,7 +119,7 @@ export function StoresSheet() {
                   setColor(c)
                 }}
                 aria-label={`Colour ${c}`}
-                className="h-6 w-6 rounded-full"
+                className="h-7 w-7 shrink-0 rounded-full"
                 style={{
                   background: c,
                   outline: color === c ? '2px solid var(--text)' : 'none',
