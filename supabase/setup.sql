@@ -1,10 +1,18 @@
 -- Things — complete database setup, in one paste.
 --
 -- Copy this whole file into the Supabase SQL Editor and hit Run, once.
--- It is the same content as 001–004 run in order; those are kept separate
--- for readability, this is here so setup is a single step.
+-- It is the same content as 001-004, 006, 007 and 008 run in order; those are
+-- kept separate for readability, this is here so setup — and catching a
+-- database up after a feature update — is a single step.
 --
--- Safe to run more than once: every statement is idempotent.
+-- Safe to run more than once: every statement is idempotent, including on a
+-- database that already has some of these tables. `create table if not
+-- exists` alone would NOT be enough for that second case — it is a silent
+-- no-op on a table that already exists, so a column added to a CREATE TABLE
+-- block after the table was first created would never actually arrive. The
+-- `alter table ... add column if not exists` statements later in this file
+-- are what make re-running it actually catch a table up, not just the parts
+-- of it that happen to be brand new.
 
 
 -- ==========================================================================
@@ -311,6 +319,65 @@ create index if not exists shopping_active_idx on shopping_items (is_done, urgen
 create index if not exists wishlist_desire_idx on wishlist_items (is_purchased, desire_level desc);
 create index if not exists stores_routable_idx on stores (is_online, sort_order);
 create index if not exists push_profile_idx    on push_subscriptions (profile_id);
+
+
+-- ==========================================================================
+-- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql
+-- ==========================================================================
+--
+-- Folded in here, not left as separate optional files, because of a sharp
+-- edge in the block above: `create table if not exists` is a silent no-op on
+-- a table that already exists — it does NOT retroactively add a column added
+-- to the CREATE TABLE definition later. A household_settings table created
+-- before calendar_token existed in this file stays without a calendar_token
+-- column even after re-pasting the "complete" setup, with no error to notice.
+-- These `alter table ... add column if not exists` statements are what
+-- actually apply to a pre-existing table, on a fresh one they're harmless
+-- no-ops since the column is already there from the block above.
+
+-- Profile photos.
+alter table profiles add column if not exists avatar_url text;
+
+-- Auto-clearing finished items, and custom recurrence quick picks.
+alter table household_settings
+  add column if not exists auto_clear_days integer not null default 7;
+alter table profile_settings
+  add column if not exists recurrence_presets jsonb not null default '[]'::jsonb;
+
+-- Yearly recurrence. Without these two, Supabase rejects a chore set to
+-- repeat in years: the CHECK refuses the value, and the trigger would compute
+-- a null next_due_at even if it got through.
+alter table chores drop constraint if exists chores_recurrence_unit_check;
+alter table chores add constraint chores_recurrence_unit_check
+  check (recurrence_unit in ('hours','days','weeks','months','years'));
+
+create or replace function compute_next_due() returns trigger
+language plpgsql as $$
+begin
+  if new.is_recurring and new.last_completed_at is not null then
+    new.next_due_at := new.last_completed_at + make_interval(
+      hours  => case when new.recurrence_unit = 'hours'  then new.recurrence_count else 0 end,
+      days   => case when new.recurrence_unit = 'days'   then new.recurrence_count else 0 end,
+      weeks  => case when new.recurrence_unit = 'weeks'  then new.recurrence_count else 0 end,
+      months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end,
+      years  => case when new.recurrence_unit = 'years'  then new.recurrence_count else 0 end
+    );
+  else
+    new.next_due_at := null;
+  end if;
+  new.updated_at := now();
+  return new;
+end $$;
+
+-- Google Calendar sync. null calendar_token = sync switched off; the Edge
+-- Function refuses every request in that state.
+alter table household_settings
+  add column if not exists calendar_token text;
+alter table household_settings
+  add column if not exists calendar_alarm_minutes integer not null default 0;
+create index if not exists household_settings_calendar_token_idx
+  on household_settings (calendar_token)
+  where calendar_token is not null;
 
 
 -- ==========================================================================
