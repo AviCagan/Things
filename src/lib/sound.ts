@@ -1,36 +1,92 @@
 import type { HapticEventName } from '@/data/types'
 
 /**
- * Synthesised feedback ticks — no asset files, a distinct timbre per event.
+ * Synthesised feedback ticks — no asset files, a distinct *shape* per event,
+ * not just a different pitch.
+ *
+ * A single 30ms sine blip at 660Hz and one at 740Hz read as "the same click"
+ * on a phone speaker — the frequency gap is real but too small to perceive
+ * without them side by side. What actually reads as a different sound is
+ * shape: how many notes, whether they rise or fall, and timbre (sine reads
+ * soft, triangle reads bright, sawtooth reads harsh/buzzy). Every event here
+ * is built from those three levers, not pitch alone.
  *
  * This is the audible half of Jackie's feedback channel, since iOS Safari has
  * no haptics at all. Default off; enabled per profile.
  */
 
-interface Tone {
+interface Note {
   freq: number
+  /** Seconds after the event fires. */
+  delay: number
   /** seconds */
   dur: number
   type: OscillatorType
   gain: number
-  /** optional second blip, for events that should feel like a "ta-da" */
-  then?: { freq: number; delay: number }
 }
 
+/** One or more notes in sequence. A single note is still a full Tone. */
+type Tone = Note[]
+
+const note = (
+  freq: number,
+  delay: number,
+  dur: number,
+  type: OscillatorType,
+  gain: number,
+): Note => ({ freq, delay, dur, type, gain })
+
 const TONES: Record<HapticEventName, Tone> = {
-  tap: { freq: 660, dur: 0.03, type: 'sine', gain: 0.05 },
-  toggleOn: { freq: 880, dur: 0.05, type: 'sine', gain: 0.07 },
-  toggleOff: { freq: 520, dur: 0.05, type: 'sine', gain: 0.06 },
-  claim: { freq: 740, dur: 0.06, type: 'triangle', gain: 0.08, then: { freq: 990, delay: 0.06 } },
-  complete: { freq: 880, dur: 0.07, type: 'sine', gain: 0.09, then: { freq: 1320, delay: 0.07 } },
-  delete: { freq: 300, dur: 0.09, type: 'sawtooth', gain: 0.06 },
-  swipeThreshold: { freq: 600, dur: 0.025, type: 'sine', gain: 0.05 },
-  longPress: { freq: 420, dur: 0.06, type: 'triangle', gain: 0.07 },
-  dragStart: { freq: 500, dur: 0.03, type: 'sine', gain: 0.05 },
-  snap: { freq: 1100, dur: 0.018, type: 'sine', gain: 0.04 },
-  success: { freq: 880, dur: 0.07, type: 'sine', gain: 0.09, then: { freq: 1320, delay: 0.07 } },
-  warning: { freq: 480, dur: 0.09, type: 'triangle', gain: 0.08 },
-  error: { freq: 220, dur: 0.14, type: 'sawtooth', gain: 0.08 },
+  // Minor, frequent UI feedback: one short blip each, but a different timbre
+  // per role so a run of taps doesn't blur into a single texture.
+  tap: [note(680, 0, 0.03, 'sine', 0.05)],
+  dragStart: [note(420, 0, 0.035, 'square', 0.035)],
+  snap: [note(1400, 0, 0.014, 'sine', 0.035)],
+  swipeThreshold: [note(900, 0, 0.02, 'triangle', 0.05)],
+  longPress: [note(360, 0, 0.09, 'triangle', 0.06)],
+
+  // Binary state, opposite direction: a rising pair to switch on, the same
+  // two notes in reverse to switch off — the ear recognises "backwards".
+  toggleOn: [note(560, 0, 0.045, 'sine', 0.06), note(880, 0.045, 0.05, 'sine', 0.06)],
+  toggleOff: [note(880, 0, 0.045, 'sine', 0.05), note(560, 0.045, 0.05, 'sine', 0.05)],
+
+  // Claiming: a bright, confident two-note "dibs" — triangle reads warmer
+  // than the plain sines used for toggles.
+  claim: [
+    note(660, 0, 0.06, 'triangle', 0.07),
+    note(880, 0.055, 0.07, 'triangle', 0.075),
+  ],
+
+  // Finishing something: a three-note rising chime, the biggest positive
+  // moment in the app, so it gets the most notes.
+  complete: [
+    note(660, 0, 0.06, 'sine', 0.07),
+    note(880, 0.06, 0.06, 'sine', 0.08),
+    note(1180, 0.12, 0.09, 'sine', 0.09),
+  ],
+  success: [
+    note(660, 0, 0.06, 'sine', 0.07),
+    note(880, 0.06, 0.06, 'sine', 0.08),
+    note(1180, 0.12, 0.09, 'sine', 0.09),
+  ],
+
+  // Deleting: a single low sawtooth falling away — the harsher timbre and
+  // downward pitch bend read as "gone", distinct from the soft toggle-off.
+  delete: [note(340, 0, 0.03, 'sawtooth', 0.06), note(180, 0.03, 0.09, 'sawtooth', 0.05)],
+
+  // Two urgency tiers below error, both using triangle (warmer than the
+  // sawtooth reserved for the worst case) but warning repeats a note where
+  // error falls through three, so they don't sound like the same event at
+  // different volumes.
+  warning: [
+    note(480, 0, 0.08, 'triangle', 0.075),
+    note(480, 0.12, 0.08, 'triangle', 0.075),
+  ],
+  error: [
+    note(420, 0, 0.07, 'sawtooth', 0.08),
+    note(320, 0.07, 0.07, 'sawtooth', 0.08),
+    note(220, 0.14, 0.12, 'sawtooth', 0.08),
+  ],
 }
 
 let ctx: AudioContext | null = null
@@ -85,12 +141,14 @@ export function play(event: HapticEventName): void {
   const tone = TONES[event]
   if (!tone) return
   try {
-    blip(ctx, tone.freq, tone.dur, tone.type, tone.gain)
-    if (tone.then) {
-      const { freq, delay } = tone.then
-      setTimeout(() => {
-        if (ctx?.state === 'running') blip(ctx, freq, tone.dur, tone.type, tone.gain * 0.8)
-      }, delay * 1000)
+    for (const n of tone) {
+      if (n.delay <= 0) {
+        blip(ctx, n.freq, n.dur, n.type, n.gain)
+      } else {
+        setTimeout(() => {
+          if (ctx?.state === 'running') blip(ctx, n.freq, n.dur, n.type, n.gain)
+        }, n.delay * 1000)
+      }
     }
   } catch {
     /* audio is a bonus channel, never the only signal */

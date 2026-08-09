@@ -44,8 +44,9 @@ export function ListRow({
         onClaim={onClaim}
         onTap={onTap}
         onLongPress={() => {
-          const el = document.activeElement as HTMLElement | null
-          el?.blur?.()
+          // Deliberately does not blur the active element: if the quick-add
+          // input has focus, dismissing the keyboard to open the wheel would
+          // close it on every single urgency change while adding items.
           setWheel(lastPointer)
         }}
         claimLabel={

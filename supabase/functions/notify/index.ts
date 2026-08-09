@@ -19,6 +19,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import webpush from 'npm:web-push@3.6.7'
 import { JWT } from 'npm:google-auth-library@9'
+import { classify, type NotifyEvent, type Push, type WebhookBody } from './classify.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -33,135 +34,6 @@ const db = createClient(SUPABASE_URL, SERVICE_ROLE, {
 
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE)
-}
-
-type NotifyEvent = 'claim_complete' | 'cooldown_ready' | 'urgent_added' | 'any_added'
-
-interface Push {
-  title: string
-  body: string
-  tab?: string
-  itemId?: string
-  tag?: string
-}
-
-// --- payload shaping --------------------------------------------------------
-
-const TAB_FOR: Record<string, string> = {
-  todos: 'todos',
-  chores: 'chores',
-  shopping_items: 'shopping',
-  wishlist_items: 'wishlist',
-}
-
-const NOUN: Record<string, string> = {
-  todos: 'to-do',
-  chores: 'chore',
-  shopping_items: 'shopping item',
-  wishlist_items: 'wish',
-}
-
-interface Row {
-  id: string
-  title: string
-  urgency?: number
-  claimed_by?: string | null
-  created_by?: string | null
-  is_done?: boolean
-  last_completed_by?: string | null
-}
-
-interface WebhookBody {
-  type: 'INSERT' | 'UPDATE' | 'DELETE'
-  table: string
-  record: Row | null
-  old_record: Row | null
-}
-
-/**
- * Decide what (if anything) this change should announce, and to whom.
- *
- * `any_added` fully subsumes `urgent_added`, so an insert resolves to exactly
- * one event and the recipient never gets two notifications for one action.
- */
-function classify(
-  body: WebhookBody,
-): { event: NotifyEvent; actorId: string | null; targetId: string | null; push: Push } | null {
-  const { type, table, record, old_record } = body
-  if (!record) return null
-
-  const tab = TAB_FOR[table]
-  const noun = NOUN[table] ?? 'item'
-
-  if (type === 'INSERT') {
-    const urgent = (record.urgency ?? 0) >= 3
-    return {
-      event: urgent ? 'urgent_added' : 'any_added',
-      actorId: record.created_by ?? null,
-      targetId: null, // the other person, resolved later
-      push: {
-        title: urgent ? `Urgent ${noun}` : `New ${noun}`,
-        body: record.title,
-        tab,
-        itemId: record.id,
-        tag: `add-${record.id}`,
-      },
-    }
-  }
-
-  if (type === 'UPDATE' && old_record) {
-    // Newly claimed
-    if (!old_record.claimed_by && record.claimed_by) {
-      return {
-        event: 'claim_complete',
-        actorId: record.claimed_by,
-        targetId: record.created_by ?? null,
-        push: {
-          title: 'Claimed',
-          body: record.title,
-          tab,
-          itemId: record.id,
-          tag: `claim-${record.id}`,
-        },
-      }
-    }
-    // Newly completed (one-off)
-    if (!old_record.is_done && record.is_done) {
-      return {
-        event: 'claim_complete',
-        actorId: null,
-        targetId: record.created_by ?? null,
-        push: {
-          title: 'Done',
-          body: record.title,
-          tab,
-          itemId: record.id,
-          tag: `done-${record.id}`,
-        },
-      }
-    }
-    // Recurring chore completed — starts a cooldown rather than finishing.
-    if (
-      table === 'chores' &&
-      record.last_completed_by &&
-      old_record.last_completed_by !== record.last_completed_by
-    ) {
-      return {
-        event: 'claim_complete',
-        actorId: record.last_completed_by,
-        targetId: null,
-        push: {
-          title: 'Chore done',
-          body: `${record.title} — resting now`,
-          tab: 'chores',
-          itemId: record.id,
-          tag: `chore-${record.id}`,
-        },
-      }
-    }
-  }
-
-  return null
 }
 
 // --- delivery ---------------------------------------------------------------

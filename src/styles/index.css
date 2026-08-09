@@ -138,6 +138,14 @@
   body,
   #root {
     height: 100%;
+    /* iOS Safari's `vh`/`%` chain resolves against the "large" viewport — the
+       space its address bar and toolbar collapse into. In a normal tab that
+       gap ends up hidden under the toolbar; in standalone mode (installed to
+       the Home Screen) there is no toolbar to hide it under, so it shows up
+       as dead space below the dock. `dvh` tracks the viewport that is
+       actually visible right now in both contexts. Declared after the
+       fallback so unsupporting engines just keep the line above. */
+    height: 100dvh;
   }
 
   body {
