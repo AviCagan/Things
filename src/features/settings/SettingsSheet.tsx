@@ -527,34 +527,61 @@ function AvatarRow({ profile }: { profile: Profile }) {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <div className="flex items-center gap-1.5">
+          {/* Two inputs rather than one: `capture` opens the camera straight
+              away, and without it the picker offers the photo library. There
+              is no single control that offers both. */}
+          <label
+            className="cursor-pointer rounded-full px-3 py-2 text-[12px] font-semibold text-white"
+            style={{ background: 'var(--accent)', opacity: busy ? 0.6 : 1 }}
+          >
+            {busy ? 'Saving…' : 'Camera'}
+            <input
+              type="file"
+              accept="image/*"
+              capture="user"
+              className="hidden"
+              onChange={(e) => {
+                void pick(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
+          </label>
+
+          <label
+            className="cursor-pointer rounded-full px-3 py-2 text-[12px] font-semibold"
+            style={{
+              background: 'var(--surface-3)',
+              color: 'var(--text)',
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            Library
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                void pick(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
+          </label>
+        </div>
+
         {profile.avatar_url && (
           <button
             onClick={() => {
               fire('delete')
               void dataActions.patchRow('profiles', profile.id, { avatar_url: null })
             }}
-            className="rounded-full px-3 py-2 text-[12px] font-medium"
-            style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
+            className="px-1 text-[12px]"
+            style={{ color: 'var(--text-faint)' }}
           >
-            Remove
+            Remove photo
           </button>
         )}
-        <label
-          className="cursor-pointer rounded-full px-3 py-2 text-[12px] font-semibold text-white"
-          style={{ background: 'var(--accent)', opacity: busy ? 0.6 : 1 }}
-        >
-          {busy ? 'Saving…' : profile.avatar_url ? 'Change' : 'Add'}
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              void pick(e.target.files?.[0])
-              e.target.value = ''
-            }}
-          />
-        </label>
       </div>
     </div>
   )

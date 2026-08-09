@@ -5,6 +5,7 @@ import { useData, dataActions } from '@/store/useData'
 import { useUI } from '@/store/useUI'
 import { fire } from '@/lib/haptics'
 import { AddressInput } from '@/components/primitives/AddressInput'
+import { ColorPicker } from '@/components/primitives/ColorPicker'
 import type { Store } from '@/data/types'
 
 const PALETTE = [
@@ -28,6 +29,7 @@ export function StoresSheet() {
   const [address, setAddress] = useState('')
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [color, setColor] = useState(PALETTE[0])
+  const [wheelOpen, setWheelOpen] = useState(false)
 
   async function add() {
     if (!name.trim()) return
@@ -51,19 +53,25 @@ export function StoresSheet() {
     setAddress('')
     setCoords(null)
     setIsOnline(false)
-    setColor(PALETTE[(PALETTE.indexOf(color) + 1) % PALETTE.length])
+    setWheelOpen(false)
+    const i = PALETTE.indexOf(color)
+    setColor(PALETTE[(i < 0 ? 0 : i + 1) % PALETTE.length])
   }
 
   return (
     <Sheet open={sheet.kind === 'stores'} onClose={closeSheet} title="Stores">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2.5 rounded-2xl p-3.5" style={{ background: 'var(--surface-2)' }}>
-          <input
+          {/* Searching by name fills the address too, so a shop only has to
+              be looked up once rather than typed here and searched again. */}
+          <AddressInput
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Store name"
-            className="rounded-xl px-3.5 py-3 outline-none"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            onChange={setName}
+            onPick={(place) => {
+              setAddress(place.address)
+              setCoords({ lat: place.lat, lng: place.lng })
+            }}
+            placeholder="Store name — we'll find the address"
           />
 
           <label className="flex items-center gap-2.5 px-1 py-1">
@@ -101,23 +109,23 @@ export function StoresSheet() {
           )}
 
           <div className="flex flex-wrap items-center gap-2 px-1 pt-1">
-            {/* Any colour, not just the presets. */}
-            <label
-              className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-full"
+            <button
+              type="button"
+              onClick={() => {
+                fire('tap')
+                setWheelOpen((v) => !v)
+              }}
+              aria-label="Pick any colour"
+              aria-expanded={wheelOpen}
+              className="h-7 w-7 shrink-0 rounded-full"
               style={{
                 background:
                   'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
-                border: '2px solid var(--border-strong)',
+                border: wheelOpen
+                  ? '2px solid var(--text)'
+                  : '2px solid var(--border-strong)',
               }}
-              aria-label="Pick any colour"
-            >
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                className="h-0 w-0 opacity-0"
-              />
-            </label>
+            />
             {PALETTE.map((c) => (
               <button
                 key={c}
@@ -135,6 +143,19 @@ export function StoresSheet() {
               />
             ))}
           </div>
+
+          {wheelOpen && (
+            <div className="pt-2">
+              <ColorPicker value={color} onChange={setColor} />
+            </div>
+          )}
+
+          {!isOnline && (
+            <p className="px-1 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              Double-check the address before your first trip — search results
+              can land on the wrong branch of a chain.
+            </p>
+          )}
 
           <button
             onClick={add}

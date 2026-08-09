@@ -12,10 +12,9 @@ import { fire } from '@/lib/haptics'
  */
 
 const URGENCY_COLORS: Record<Urgency, string> = {
-  0: 'var(--u-chill)',
-  1: 'var(--u-normal)',
-  2: 'var(--u-high)',
-  3: 'var(--u-urgent)',
+  0: 'var(--u-low)',
+  1: 'var(--u-med)',
+  2: 'var(--u-urgent)',
 }
 
 export function QuickAdd({
@@ -47,7 +46,7 @@ export function QuickAdd({
   }
 
   function cycleUrgency() {
-    const next = ((urgency + 1) % 4) as Urgency
+    const next = ((urgency + 1) % 3) as Urgency
     setUrgency(next)
     fire('snap')
   }
@@ -83,8 +82,8 @@ export function QuickAdd({
             transition={{ type: 'spring', stiffness: 500, damping: 24 }}
             className="block rounded-full"
             style={{
-              width: 4 + urgency * 2,
-              height: 4 + urgency * 2,
+              width: 5 + urgency * 3,
+              height: 5 + urgency * 3,
               background: URGENCY_COLORS[urgency],
             }}
           />

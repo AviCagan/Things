@@ -113,7 +113,13 @@ function FilterBar({ profiles }: { profiles: Profile[] }) {
   const current = SORTS.find((s) => s.key === sort)!
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-1 pb-3">
+    /* One scrolling row rather than wrapping: wrapping pushed the grid down
+       and the number of lines changed as filters were used, which made the
+       whole page jump. */
+    <div
+      className="-mx-3 mb-3 flex items-center gap-1.5 overflow-x-auto px-4 pb-1"
+      style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
+    >
       {SORTS.map((s) => {
         const on = s.key === sort
         return (
@@ -126,7 +132,7 @@ function FilterBar({ profiles }: { profiles: Profile[] }) {
               if (on) toggleDir()
               else setSort(s.key)
             }}
-            className="flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-medium"
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-3 py-1.5 text-[12px] font-medium"
             style={{
               background: on ? 'var(--accent)' : 'var(--surface-2)',
               color: on ? '#fff' : 'var(--text-dim)',
@@ -142,7 +148,10 @@ function FilterBar({ profiles }: { profiles: Profile[] }) {
         )
       })}
 
-      <span className="mx-0.5 h-4 w-px" style={{ background: 'var(--border-strong)' }} />
+      <span
+        className="mx-0.5 h-4 w-px shrink-0"
+        style={{ background: 'var(--border-strong)' }}
+      />
 
       <OwnerPill active={owner === null} onClick={() => setOwner(null)} label="All" />
       {profiles.map((p) => (
@@ -162,7 +171,10 @@ function FilterBar({ profiles }: { profiles: Profile[] }) {
       />
 
       {(sort !== 'desire' || !desc || owner !== null) && (
-        <span className="pl-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
+        <span
+          className="shrink-0 whitespace-nowrap pl-1 pr-2 text-[11px]"
+          style={{ color: 'var(--text-faint)' }}
+        >
           {desc ? current.high : current.low}
         </span>
       )}
@@ -189,7 +201,7 @@ function OwnerPill({
         fire('snap')
         onClick()
       }}
-      className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-medium"
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[12px] font-medium"
       style={{
         background: active
           ? color

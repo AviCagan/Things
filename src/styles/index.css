@@ -22,12 +22,11 @@
   --accent-strong: color-mix(in oklab, var(--accent) 82%, white 18%);
   --accent-text: color-mix(in oklab, var(--accent) 88%, white 12%);
 
-  /* Urgency reads as a traffic light: green is fine, red needs you now.
-     Deliberately independent of the accent, so recolouring the app never
-     makes "normal" look urgent. */
-  --u-chill: #2bb673;
-  --u-normal: #7ec13f;
-  --u-high: #f5a524;
+  /* Urgency is a traffic light: three levels, no more. Deliberately
+     independent of the accent, so recolouring the app can never make a low
+     priority look urgent. */
+  --u-low: #2bb673;
+  --u-med: #f5a524;
   --u-urgent: #ff4d4d;
 
   --ok: #22c55e;

@@ -29,6 +29,7 @@ import { hasSession, supabase } from './lib/supabase'
 import { createSupabaseAdapter } from './data/supabaseAdapter'
 import { drain } from './data/outbox'
 import { startCleanup } from './lib/cleanup'
+import { errorMessage, withRetry } from './lib/errors'
 
 /** Swap the local adapter for Supabase and replay anything queued offline. */
 async function goLive() {
@@ -80,13 +81,16 @@ export default function App() {
         return
       }
 
-      await goLive()
+      // Retried: a cold launch frequently beats the network stack to it, and
+      // that first failure is what produced the "couldn't load" screen even
+      // though tapping Try again worked straight away.
+      await withRetry(() => goLive())
       await ensureSeeded()
       startCleanup()
       setBoot('ready')
     } catch (err) {
       console.error('[boot]', err)
-      setBootError(err instanceof Error ? err.message : String(err))
+      setBootError(errorMessage(err))
       setBoot('error')
     }
   }
@@ -109,13 +113,13 @@ export default function App() {
           // profile screen never renders against an empty database.
           onUnlocked={async () => {
             try {
-              await goLive()
+              await withRetry(() => goLive())
               await ensureSeeded()
               startCleanup()
               setBoot('ready')
             } catch (err) {
               console.error('[unlock]', err)
-              setBootError(err instanceof Error ? err.message : String(err))
+              setBootError(errorMessage(err))
               setBoot('error')
             }
           }}

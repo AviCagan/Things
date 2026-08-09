@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { URGENCY_META, type Urgency } from '@/data/types'
+import { URGENCY_META, normalizeUrgency, type Urgency } from '@/data/types'
 import { fire } from '@/lib/haptics'
 
 /**
@@ -9,12 +9,11 @@ import { fire } from '@/lib/haptics'
  * and the reason urgency is worth setting at all.
  */
 
-const LEVELS: Urgency[] = [0, 1, 2, 3]
+const LEVELS: Urgency[] = [0, 1, 2]
 const COLORS: Record<Urgency, string> = {
-  0: 'var(--u-chill)',
-  1: 'var(--u-normal)',
-  2: 'var(--u-high)',
-  3: 'var(--u-urgent)',
+  0: 'var(--u-low)',
+  1: 'var(--u-med)',
+  2: 'var(--u-urgent)',
 }
 
 const RADIUS = 92
@@ -30,8 +29,8 @@ export function UrgencyWheel({
   onPick: (u: Urgency) => void
   onClose: () => void
 }) {
-  const [active, setActive] = useState<Urgency>(current)
-  const activeRef = useRef<Urgency>(current)
+  const [active, setActive] = useState<Urgency>(normalizeUrgency(current))
+  const activeRef = useRef<Urgency>(normalizeUrgency(current))
 
   // Fan the arcs upward, and flip if the touch was near the top of the screen.
   const flip = origin.y < RADIUS + 80

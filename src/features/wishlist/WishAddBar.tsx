@@ -261,9 +261,11 @@ function WishBar({
             commit()
           }
         }}
-        placeholder={loadingPreview ? 'Reading the link…' : 'Something you want, or paste a link…'}
+        placeholder={loadingPreview ? 'Reading the link…' : 'Add or paste a link…'}
         enterKeyHint="done"
-        className="min-w-0 flex-1 bg-transparent px-1 outline-none placeholder:text-[var(--text-faint)]"
+        // min-w-0 lets the field actually shrink inside the flex row; without
+        // it the text runs on underneath the buttons instead of scrolling.
+        className="w-full min-w-0 flex-1 truncate bg-transparent px-1 outline-none placeholder:text-[var(--text-faint)]"
       />
 
       <OwnerButton owner={owner} profiles={profiles} onClick={cycleOwner} />

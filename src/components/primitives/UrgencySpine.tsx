@@ -1,4 +1,4 @@
-import type { Urgency } from '@/data/types'
+import { normalizeUrgency, type Urgency } from '@/data/types'
 
 /**
  * Urgency as a leading-edge spine.
@@ -9,14 +9,15 @@ import type { Urgency } from '@/data/types'
  */
 
 const SPEC: Record<Urgency, { w: number; h: string; color: string; glow: boolean }> = {
-  0: { w: 2, h: '38%', color: 'var(--u-chill)', glow: false },
-  1: { w: 3, h: '68%', color: 'var(--u-normal)', glow: false },
-  2: { w: 4, h: '100%', color: 'var(--u-high)', glow: false },
-  3: { w: 5, h: '100%', color: 'var(--u-urgent)', glow: true },
+  0: { w: 3, h: '46%', color: 'var(--u-low)', glow: false },
+  1: { w: 4, h: '78%', color: 'var(--u-med)', glow: false },
+  2: { w: 5, h: '100%', color: 'var(--u-urgent)', glow: true },
 }
 
 export function UrgencySpine({ urgency }: { urgency: Urgency }) {
-  const s = SPEC[urgency]
+  // Rows written when there were four levels can still hold a 3.
+  const level = normalizeUrgency(urgency)
+  const s = SPEC[level]
   return (
     <div className="absolute inset-y-0 left-0 flex items-center" aria-hidden>
       <div
@@ -26,7 +27,7 @@ export function UrgencySpine({ urgency }: { urgency: Urgency }) {
           height: s.h,
           background: s.color,
           borderRadius: '0 4px 4px 0',
-          opacity: urgency === 0 ? 0.7 : 1,
+          opacity: level === 0 ? 0.85 : 1,
         }}
       />
     </div>

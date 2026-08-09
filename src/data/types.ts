@@ -4,15 +4,25 @@
 
 export type ProfileSlug = 'avi' | 'jackie'
 
-export const URGENCY = { CHILL: 0, NORMAL: 1, HIGH: 2, URGENT: 3 } as const
-export type Urgency = 0 | 1 | 2 | 3
+/**
+ * Three levels, read as a traffic light. The database still allows 0–3 from
+ * when there were four, so anything stored as 3 is clamped on the way in
+ * rather than migrated — old rows keep working and nothing needs backfilling.
+ */
+export const URGENCY = { LOW: 0, MEDIUM: 1, URGENT: 2 } as const
+export type Urgency = 0 | 1 | 2
+
+export const URGENCY_LEVELS: Urgency[] = [0, 1, 2]
 
 export const URGENCY_META: Record<Urgency, { label: string; short: string }> = {
-  0: { label: 'Chill', short: 'Chill' },
-  1: { label: 'Normal', short: 'Normal' },
-  2: { label: 'High', short: 'High' },
-  3: { label: 'Urgent', short: 'Urgent' },
+  0: { label: 'Low', short: 'Low' },
+  1: { label: 'Medium', short: 'Med' },
+  2: { label: 'Urgent', short: 'Urgent' },
 }
+
+/** Fold legacy 3s down to the new top level. */
+export const normalizeUrgency = (value: number): Urgency =>
+  (value >= 2 ? 2 : value <= 0 ? 0 : 1) as Urgency
 
 export type Desire = 1 | 2 | 3 | 4 | 5
 
