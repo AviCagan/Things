@@ -1,0 +1,168 @@
+// Things — link unfurler (Supabase Edge Function, Deno)
+//
+// Reads a product page and returns its title, image and price.
+//
+// This has to live on a server: a browser cannot fetch another site's HTML,
+// because the browser blocks cross-origin reads unless that site opts in with
+// CORS headers — and shops do not. So the app asks this function, and this
+// function does the fetching.
+//
+// Deploy:  supabase functions deploy unfurl --no-verify-jwt
+// No secrets needed.
+
+const TIMEOUT_MS = 8000
+const MAX_BYTES = 512 * 1024
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+interface Unfurled {
+  title: string | null
+  image: string | null
+  priceCents: number | null
+  siteName: string | null
+}
+
+/** Pull a meta tag's content by property or name, whichever the page used. */
+function meta(html: string, key: string): string | null {
+  const patterns = [
+    new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["']`, 'i'),
+    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["']`, 'i'),
+  ]
+  for (const re of patterns) {
+    const m = html.match(re)
+    if (m?.[1]) return decodeEntities(m[1].trim())
+  }
+  return null
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+}
+
+function parsePrice(raw: string | null): number | null {
+  if (!raw) return null
+  // Strip currency symbols and thousands separators, keep the decimal.
+  const cleaned = raw.replace(/[^\d.,]/g, '').replace(/,(?=\d{3}\b)/g, '')
+  const normalised = cleaned.replace(',', '.')
+  const n = Number.parseFloat(normalised)
+  if (!Number.isFinite(n) || n <= 0 || n > 10_000_000) return null
+  return Math.round(n * 100)
+}
+
+/** JSON-LD is where most shops put the real, structured price. */
+function fromJsonLd(html: string): { price: number | null; image: string | null; name: string | null } {
+  const out = { price: null as number | null, image: null as string | null, name: null as string | null }
+  const blocks = html.matchAll(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  )
+
+  for (const block of blocks) {
+    try {
+      const parsed = JSON.parse(block[1].trim())
+      const nodes = Array.isArray(parsed) ? parsed : [parsed, ...(parsed['@graph'] ?? [])]
+      for (const node of nodes) {
+        if (!node || typeof node !== 'object') continue
+        const offers = Array.isArray(node.offers) ? node.offers[0] : node.offers
+        const price = offers?.price ?? offers?.lowPrice ?? node.price
+        if (price != null && out.price == null) out.price = parsePrice(String(price))
+        if (node.name && out.name == null && typeof node.name === 'string') out.name = node.name
+        const img = Array.isArray(node.image) ? node.image[0] : node.image
+        if (typeof img === 'string' && out.image == null) out.image = img
+      }
+    } catch {
+      // A page with malformed JSON-LD is common; fall back to meta tags.
+    }
+  }
+  return out
+}
+
+function absolute(url: string | null, base: string): string | null {
+  if (!url) return null
+  try {
+    return new URL(url, base).href
+  } catch {
+    return null
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+
+  try {
+    const { url } = await req.json()
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      return Response.json({ error: 'Pass an http(s) url' }, { status: 400, headers: CORS })
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: {
+        // Plain fetch gets bot-blocked by most shops.
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    }).finally(() => clearTimeout(timer))
+
+    if (!res.ok) {
+      return Response.json({ error: `Site returned ${res.status}` }, { status: 200, headers: CORS })
+    }
+
+    // Read a capped slice — product pages put their metadata in <head>, and
+    // some listing pages are megabytes of markup we don't need.
+    const reader = res.body?.getReader()
+    let html = ''
+    if (reader) {
+      const decoder = new TextDecoder()
+      let total = 0
+      while (total < MAX_BYTES) {
+        const { done, value } = await reader.read()
+        if (done) break
+        total += value.length
+        html += decoder.decode(value, { stream: true })
+        if (/<\/head>/i.test(html)) break
+      }
+      await reader.cancel().catch(() => undefined)
+    }
+
+    const ld = fromJsonLd(html)
+    const final = res.url || url
+
+    const result: Unfurled = {
+      title:
+        meta(html, 'og:title') ??
+        ld.name ??
+        decodeEntities(html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? '') ||
+        null,
+      image: absolute(meta(html, 'og:image') ?? ld.image, final),
+      priceCents:
+        ld.price ??
+        parsePrice(meta(html, 'product:price:amount')) ??
+        parsePrice(meta(html, 'og:price:amount')) ??
+        null,
+      siteName: meta(html, 'og:site_name'),
+    }
+
+    return Response.json(result, { headers: CORS })
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : 'Could not read that page' },
+      { status: 200, headers: CORS },
+    )
+  }
+})

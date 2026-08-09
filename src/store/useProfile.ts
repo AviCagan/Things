@@ -51,6 +51,7 @@ export const defaultSettings = (
   // Jackie navigates with Waze, Avi with Google Maps — changeable in Settings.
   nav_app: slug === 'avi' ? 'google' : 'waze',
   notify_events: {},
+  recurrence_presets: [],
   phone_e164: null,
   updated_at: nowIso(),
 })
@@ -136,6 +137,7 @@ export async function ensureSeeded(): Promise<void> {
       home_address: null,
       home_lat: null,
       home_lng: null,
+      auto_clear_days: 7,
       updated_at: nowIso(),
     }
     await adapter.insert('household_settings', h)

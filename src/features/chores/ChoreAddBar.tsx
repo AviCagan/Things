@@ -4,13 +4,20 @@ import { QuickAdd } from '@/components/shell/QuickAdd'
 import { Icon } from '@/components/primitives/Icon'
 import { RECURRENCE_PRESETS } from '@/lib/time'
 import { dataActions } from '@/store/useData'
-import { useProfile } from '@/store/useProfile'
+import { useProfile, useSettings } from '@/store/useProfile'
 import { fire } from '@/lib/haptics'
 import type { RecurrenceUnit } from '@/data/types'
 
 /** Quick-add plus a recurrence picker that reveals itself only when armed. */
 export function ChoreAddBar() {
   const profileId = useProfile((s) => s.profileId)
+  const settings = useSettings()
+  // An empty selection means "show the defaults" rather than "show nothing".
+  const chosen = settings?.recurrence_presets ?? []
+  const presets = chosen.length
+    ? RECURRENCE_PRESETS.filter((p) => chosen.includes(p.label))
+    : RECURRENCE_PRESETS
+
   const [recurring, setRecurring] = useState(false)
   const [preset, setPreset] = useState(RECURRENCE_PRESETS[0])
   const [custom, setCustom] = useState<{ count: string; unit: RecurrenceUnit }>({
@@ -47,7 +54,7 @@ export function ChoreAddBar() {
                 border: '1px solid var(--border)',
               }}
             >
-              {RECURRENCE_PRESETS.map((p) => {
+              {presets.map((p) => {
                 const on = !useCustom && preset.label === p.label
                 return (
                   <button

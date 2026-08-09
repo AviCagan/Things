@@ -9,6 +9,9 @@ import { unlockAudio } from '@/lib/sound'
 import { isIOS, isNative } from '@/lib/platform'
 import { enablePush, pushState, type PushState } from '@/lib/notifications'
 import { fileToAvatarDataUrl, dataUrlBytes } from '@/lib/image'
+import { AddressInput } from '@/components/primitives/AddressInput'
+import { AUTO_CLEAR_OPTIONS } from '@/lib/cleanup'
+import { RECURRENCE_PRESETS } from '@/lib/time'
 import { Avatar } from '@/components/primitives/ClaimChip'
 import { toast } from 'sonner'
 import type { Profile } from '@/data/types'
@@ -53,7 +56,9 @@ export function SettingsSheet() {
   const household = useData((s) => s.household_settings)[0]
 
   const [home, setHome] = useState(household?.home_address ?? '')
+  const [homeCoords, setHomeCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [showHaptics, setShowHaptics] = useState(false)
+  const [showPresets, setShowPresets] = useState(false)
 
   if (!profile || !settings) return null
   const id = profile.id
@@ -231,21 +236,28 @@ export function SettingsSheet() {
 
           <Row label="Home address" stacked>
             <div className="flex gap-2 pt-1">
-              <input
-                value={home}
-                onChange={(e) => setHome(e.target.value)}
-                placeholder="Street, city — or paste lat, lng"
-                className="min-w-0 flex-1 rounded-xl px-3.5 py-3 text-[14px] outline-none"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-              />
+              <div className="min-w-0 flex-1">
+                <AddressInput
+                  value={home}
+                  onChange={(v) => {
+                    setHome(v)
+                    setHomeCoords(null)
+                  }}
+                  onPick={(place) => setHomeCoords({ lat: place.lat, lng: place.lng })}
+                  placeholder="Start typing your address…"
+                  className="w-full rounded-xl px-3.5 py-3 text-[14px] outline-none"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                />
+              </div>
               <button
                 onClick={() => {
                   fire('success')
-                  // Clear cached coords so the new address gets re-geocoded.
+                  // Keep coordinates from a picked suggestion; otherwise clear
+                  // them so the typed text is resolved on the next trip.
                   void dataActions.patchRow('household_settings', 'singleton', {
                     home_address: home.trim() || null,
-                    home_lat: null,
-                    home_lng: null,
+                    home_lat: homeCoords?.lat ?? null,
+                    home_lng: homeCoords?.lng ?? null,
                   })
                 }}
                 className="shrink-0 rounded-xl px-4 text-[14px] font-semibold text-white"
@@ -258,6 +270,82 @@ export function SettingsSheet() {
               Shared by both of you. Every trip starts and ends here.
             </p>
           </Row>
+        </Group>
+
+        <Group label="Lists">
+          <Row label="Clear finished items after" stacked>
+            <div className="flex flex-wrap gap-1.5 pt-2">
+              {AUTO_CLEAR_OPTIONS.map((o) => {
+                const on = (household?.auto_clear_days ?? 7) === o.days
+                return (
+                  <button
+                    key={o.days}
+                    onClick={() => {
+                      fire('snap')
+                      void dataActions.patchRow('household_settings', 'singleton', {
+                        auto_clear_days: o.days,
+                      })
+                    }}
+                    className="rounded-full px-3 py-2 text-[13px] font-medium"
+                    style={{
+                      background: on ? 'var(--accent)' : 'var(--surface-3)',
+                      color: on ? '#fff' : 'var(--text-dim)',
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="pt-2 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              Applies to finished to-dos and bought shopping items. Shared by both
+              of you, and only runs while the app is open.
+            </p>
+          </Row>
+
+          <button
+            onClick={() => {
+              fire('tap')
+              setShowPresets((v) => !v)
+            }}
+            className="flex items-center justify-between rounded-2xl px-4 py-3.5"
+            style={{ background: 'var(--surface-2)' }}
+          >
+            <span className="text-[14px]">Recurring chore quick picks</span>
+            <Icon name="chevron" size={15} />
+          </button>
+
+          {showPresets && (
+            <div className="flex flex-wrap gap-1.5 px-1 pt-1">
+              {RECURRENCE_PRESETS.map((p) => {
+                const chosen = settings.recurrence_presets ?? []
+                // Empty means "all of them", so nothing looks switched off
+                // before you have made a choice.
+                const on = chosen.length === 0 || chosen.includes(p.label)
+                return (
+                  <button
+                    key={p.label}
+                    onClick={() => {
+                      fire('snap')
+                      const base = chosen.length ? chosen : RECURRENCE_PRESETS.map((x) => x.label)
+                      const next = on
+                        ? base.filter((l) => l !== p.label)
+                        : [...base, p.label]
+                      // Never leave zero picks — that would empty the chore bar.
+                      set({ recurrence_presets: next.length ? next : [p.label] })
+                    }}
+                    className="rounded-full px-3 py-2 text-[13px] font-medium"
+                    style={{
+                      background: on ? 'var(--accent)' : 'var(--surface-3)',
+                      color: on ? '#fff' : 'var(--text-dim)',
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </Group>
 
         <NotificationsGroup profileId={id} settings={settings} onSet={set} />

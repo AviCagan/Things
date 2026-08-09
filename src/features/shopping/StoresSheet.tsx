@@ -4,6 +4,7 @@ import { Icon } from '@/components/primitives/Icon'
 import { useData, dataActions } from '@/store/useData'
 import { useUI } from '@/store/useUI'
 import { fire } from '@/lib/haptics'
+import { AddressInput } from '@/components/primitives/AddressInput'
 import type { Store } from '@/data/types'
 
 const PALETTE = [
@@ -25,6 +26,7 @@ export function StoresSheet() {
   const [name, setName] = useState('')
   const [isOnline, setIsOnline] = useState(false)
   const [address, setAddress] = useState('')
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [color, setColor] = useState(PALETTE[0])
 
   async function add() {
@@ -36,15 +38,18 @@ export function StoresSheet() {
       // A DB constraint also forbids coordinates on online stores, so an
       // online shop can never leak into a driving route.
       address: isOnline ? null : address.trim() || null,
-      lat: null,
-      lng: null,
-      geocoded_at: null,
-      geocode_source: null,
+      // Coordinates from a picked suggestion are kept, so trip planning never
+      // has to geocode this store at all.
+      lat: isOnline ? null : (coords?.lat ?? null),
+      lng: isOnline ? null : (coords?.lng ?? null),
+      geocoded_at: !isOnline && coords ? new Date().toISOString() : null,
+      geocode_source: !isOnline && coords ? 'photon' : null,
       color_hex: color,
       emoji: null,
     })
     setName('')
     setAddress('')
+    setCoords(null)
     setIsOnline(false)
     setColor(PALETTE[(PALETTE.indexOf(color) + 1) % PALETTE.length])
   }
@@ -84,12 +89,14 @@ export function StoresSheet() {
           </label>
 
           {!isOnline && (
-            <input
+            <AddressInput
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(v) => {
+                setAddress(v)
+                setCoords(null)
+              }}
+              onPick={(place) => setCoords({ lat: place.lat, lng: place.lng })}
               placeholder="Address (optional — used for trip planning)"
-              className="rounded-xl px-3.5 py-3 outline-none"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
             />
           )}
 
@@ -157,15 +164,17 @@ export function StoresSheet() {
 function StoreRow({ store }: { store: Store }) {
   const [editing, setEditing] = useState(false)
   const [address, setAddress] = useState(store.address ?? '')
+  const [picked, setPicked] = useState<{ lat: number; lng: number } | null>(null)
 
   async function saveAddress() {
     await dataActions.patchRow('stores', store.id, {
       address: address.trim() || null,
-      // Clear the cached geocode so the new address is resolved next trip.
-      lat: null,
-      lng: null,
-      geocoded_at: null,
-      geocode_source: null,
+      // Keep coordinates when they came from a picked suggestion; otherwise
+      // clear them so the new text gets resolved on the next trip.
+      lat: picked?.lat ?? null,
+      lng: picked?.lng ?? null,
+      geocoded_at: picked ? new Date().toISOString() : null,
+      geocode_source: picked ? 'photon' : null,
     })
     setEditing(false)
     fire('success')
@@ -214,13 +223,19 @@ function StoreRow({ store }: { store: Store }) {
 
       {editing && (
         <div className="flex gap-2">
-          <input
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="Street, city"
-            className="flex-1 rounded-xl px-3 py-2 text-[13px] outline-none"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-          />
+          <div className="flex-1">
+            <AddressInput
+              value={address}
+              onChange={(v) => {
+                setAddress(v)
+                setPicked(null)
+              }}
+              onPick={(place) => setPicked({ lat: place.lat, lng: place.lng })}
+              placeholder="Street, city"
+              className="w-full rounded-xl px-3 py-2 text-[13px] outline-none"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            />
+          </div>
           <button
             onClick={saveAddress}
             className="rounded-xl px-3 text-[13px] font-semibold text-white"

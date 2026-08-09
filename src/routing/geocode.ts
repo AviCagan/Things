@@ -138,6 +138,55 @@ export async function geocode(
   })
 }
 
+export interface PlaceSuggestion extends LatLng {
+  /** One-line label for the dropdown. */
+  label: string
+  /** What gets written into the field when picked. */
+  address: string
+}
+
+/**
+ * Type-ahead search for the address fields.
+ *
+ * Separate from `geocode()` on purpose: that one is serialised at ≥1.1s to
+ * respect the free geocoders' rate limits, which would make typing feel
+ * broken. Suggestions go straight out, debounced by the caller instead, and
+ * are abortable so an in-flight request for older text can't overwrite newer
+ * results.
+ */
+export async function searchPlaces(
+  query: string,
+  signal?: AbortSignal,
+  limit = 5,
+): Promise<PlaceSuggestion[]> {
+  const q = query.trim()
+  if (q.length < 3) return []
+
+  const url = `${PHOTON}?q=${encodeURIComponent(q)}&limit=${limit}`
+  const res = await fetch(url, { signal })
+  if (!res.ok) return []
+  const json = (await res.json()) as PhotonResponse
+
+  return (json.features ?? [])
+    .map((f) => {
+      const c = f.geometry?.coordinates
+      if (!c) return null
+      const p = f.properties ?? {}
+      const street = [p.housenumber, p.street].filter(Boolean).join(' ')
+      const locality = [p.city, p.state, p.postcode].filter(Boolean).join(', ')
+      const address = [p.name && p.name !== street ? p.name : '', street, locality]
+        .filter(Boolean)
+        .join(', ')
+      return {
+        lat: c[1],
+        lng: c[0],
+        label: address || (p.name ?? q),
+        address: address || (p.name ?? q),
+      }
+    })
+    .filter((x): x is PlaceSuggestion => x !== null)
+}
+
 /** "40.7128, -74.0060" — the manual-entry escape hatch. */
 export function parseCoordinates(input: string): LatLng | null {
   const m = input.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/)

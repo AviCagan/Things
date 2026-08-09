@@ -28,6 +28,7 @@ import { isConfigured } from './lib/env'
 import { hasSession, supabase } from './lib/supabase'
 import { createSupabaseAdapter } from './data/supabaseAdapter'
 import { drain } from './data/outbox'
+import { startCleanup } from './lib/cleanup'
 
 /** Swap the local adapter for Supabase and replay anything queued offline. */
 async function goLive() {
@@ -68,6 +69,7 @@ export default function App() {
         // No credentials: the local adapter IS the backend, not a stub.
         await useData.getState().init()
         await ensureSeeded()
+        startCleanup()
         setBoot('ready')
         return
       }
@@ -80,6 +82,7 @@ export default function App() {
 
       await goLive()
       await ensureSeeded()
+      startCleanup()
       setBoot('ready')
     } catch (err) {
       console.error('[boot]', err)
@@ -108,6 +111,7 @@ export default function App() {
             try {
               await goLive()
               await ensureSeeded()
+              startCleanup()
               setBoot('ready')
             } catch (err) {
               console.error('[unlock]', err)

@@ -17,6 +17,8 @@ create table if not exists profiles (
   slug         text unique not null check (slug in ('avi', 'jackie')),
   display_name text not null,
   avatar_emoji text not null default '🙂',
+  -- Optional photo as a data URI; two users don't justify a storage bucket.
+  avatar_url   text,
   color_hex    text not null default '#7c5cff',
   created_at   timestamptz not null default now()
 );
@@ -38,6 +40,8 @@ create table if not exists profile_settings (
   nav_app           text not null default 'google'
                       check (nav_app in ('google','waze','apple')),
   notify_events     jsonb not null default '{}'::jsonb,
+  -- Recurrence quick picks, by label. Empty = the built-in set.
+  recurrence_presets jsonb not null default '[]'::jsonb,
   -- Unused today. Reserved so SMS can be added without a migration if iOS
   -- Web Push disappoints in practice.
   phone_e164        text,
@@ -51,6 +55,8 @@ create table if not exists household_settings (
   home_address text,
   home_lat     double precision,
   home_lng     double precision,
+  -- Days to keep finished items. 0 disables clearing.
+  auto_clear_days integer not null default 7,
   updated_at   timestamptz not null default now()
 );
 

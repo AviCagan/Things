@@ -63,6 +63,11 @@ export interface ProfileSettings {
   ios_native_switch: boolean
   nav_app: NavApp
   notify_events: Partial<Record<NotifyEvent, boolean>>
+  /**
+   * Which recurrence presets show as quick picks, by label. Empty means the
+   * built-in default set.
+   */
+  recurrence_presets: string[]
   /** Reserved so SMS can be added later without a migration. */
   phone_e164: string | null
   updated_at: string
@@ -89,6 +94,12 @@ export interface HouseholdSettings {
   home_address: string | null
   home_lat: number | null
   home_lng: number | null
+  /**
+   * Days to keep finished to-dos and bought shopping items before they are
+   * removed. 0 disables clearing entirely. Shared, because it changes the
+   * data both of you see rather than just how it looks.
+   */
+  auto_clear_days: number
   updated_at: string
 }
 

@@ -299,13 +299,37 @@ function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] 
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.15 } }}
       transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-      className="relative flex min-h-[132px] flex-col justify-between overflow-hidden rounded-[var(--radius)] p-3"
+      className="relative flex flex-col justify-between overflow-hidden rounded-[var(--radius)] p-3"
       style={{
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         opacity: wish.is_purchased ? 0.55 : 1,
+        minHeight: wish.image_url ? 180 : 132,
       }}
     >
+      {wish.image_url && (
+        <>
+          <img
+            src={wish.image_url}
+            alt=""
+            loading="lazy"
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+            // A broken link shouldn't leave a torn-image icon on the card.
+            onError={(e) => {
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+          {/* Scrim so the title stays readable over any photo. */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                'linear-gradient(to top, rgb(0 0 0 / .82) 0%, rgb(0 0 0 / .55) 45%, rgb(0 0 0 / .25) 100%)',
+            }}
+          />
+        </>
+      )}
+
       <div
         className="pointer-events-none absolute inset-x-0 bottom-0"
         style={{
@@ -318,7 +342,11 @@ function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] 
         {/* pr-5 keeps long titles clear of the delete button in the corner. */}
         <div
           className="pr-5 text-[14px] font-semibold leading-snug"
-          style={{ textDecoration: wish.is_purchased ? 'line-through' : 'none' }}
+          style={{
+            textDecoration: wish.is_purchased ? 'line-through' : 'none',
+            color: wish.image_url ? '#fff' : undefined,
+            textShadow: wish.image_url ? '0 1px 3px rgb(0 0 0 / .6)' : undefined,
+          }}
         >
           {wish.title}
         </div>
