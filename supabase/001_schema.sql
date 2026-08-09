@@ -92,7 +92,7 @@ create table if not exists chores (
 
   is_recurring      boolean not null default false,
   recurrence_count  integer check (recurrence_count > 0),
-  recurrence_unit   text check (recurrence_unit in ('hours','days','weeks','months')),
+  recurrence_unit   text check (recurrence_unit in ('hours','days','weeks','months','years')),
 
   last_completed_at timestamptz,
   last_completed_by uuid references profiles(id) on delete set null,
