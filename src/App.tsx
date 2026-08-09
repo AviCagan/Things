@@ -85,7 +85,7 @@ export default function App() {
       // that first failure is what produced the "couldn't load" screen even
       // though tapping Try again worked straight away.
       await withRetry(() => goLive())
-      await ensureSeeded()
+      await withRetry(() => ensureSeeded())
       startCleanup()
       setBoot('ready')
     } catch (err) {
@@ -113,8 +113,10 @@ export default function App() {
           // profile screen never renders against an empty database.
           onUnlocked={async () => {
             try {
+              // The freshly minted token is the one most likely to look
+              // future-dated, so this path especially needs the retry.
               await withRetry(() => goLive())
-              await ensureSeeded()
+              await withRetry(() => ensureSeeded())
               startCleanup()
               setBoot('ready')
             } catch (err) {

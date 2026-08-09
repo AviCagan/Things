@@ -3,11 +3,13 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Screen, Section, EmptyState } from '@/components/shell/Screen'
 import { Icon } from '@/components/primitives/Icon'
 import { useData, dataActions } from '@/store/useData'
-import { useUI, type WishSort } from '@/store/useUI'
+import { useUI } from '@/store/useUI'
+import { SortBar, compareBy } from '@/components/shell/SortBar'
 import { Avatar } from '@/components/primitives/ClaimChip'
 import { fire } from '@/lib/haptics'
 import { formatPrice, parsePrice, priceToInput, sumPrices } from '@/lib/money'
-import { DESIRE_META, type Desire, type WishlistItem, type Profile } from '@/data/types'
+import { DesireMeter, DESIRE_COLOR } from '@/components/primitives/DesireMeter'
+import { type WishlistItem, type Profile } from '@/data/types'
 
 /**
  * The wishlist deliberately uses a different visual grammar from the other
@@ -19,8 +21,8 @@ export function WishlistTab() {
   const wishes = useData((s) => s.wishlist_items)
   const profiles = useData((s) => s.profiles)
 
-  const wishSort = useUI((s) => s.wishSort)
-  const wishDesc = useUI((s) => s.wishDesc)
+  const wishSort = useUI((s) => s.sortBy.wishlist)
+  const wishDesc = useUI((s) => s.sortDesc.wishlist)
   const wishOwner = useUI((s) => s.wishOwner)
 
   const { active, purchased } = useMemo(() => {
@@ -30,18 +32,7 @@ export function WishlistTab() {
       return w.owner_id === wishOwner
     }
 
-    const key = (w: WishlistItem) => {
-      if (wishSort === 'price') return w.price_cents ?? -1
-      if (wishSort === 'added') return w.sort_order
-      return w.desire_level
-    }
-
-    const sorted = [...wishes].filter(matchesOwner).sort((a, b) => {
-      const diff = key(a) - key(b)
-      // Ties fall back to newest first, so the order never looks arbitrary.
-      if (diff !== 0) return wishDesc ? -diff : diff
-      return b.sort_order - a.sort_order
-    })
+    const sorted = [...wishes].filter(matchesOwner).sort(compareBy(wishSort, wishDesc))
 
     return {
       active: sorted.filter((w) => !w.is_purchased),
@@ -67,7 +58,15 @@ export function WishlistTab() {
         ) : undefined
       }
     >
-      <FilterBar profiles={profiles} />
+      <SortBar
+        tab="wishlist"
+        options={[
+          { key: 'desire', label: 'Wanted' },
+          { key: 'price', label: 'Price' },
+          { key: 'added', label: 'Added' },
+        ]}
+        trailing={<OwnerFilter profiles={profiles} />}
+      />
       {active.length === 0 && purchased.length === 0 ? (
         <EmptyState
           icon={<Icon name="star" size={44} strokeWidth={1.5} />}
@@ -95,139 +94,77 @@ export function WishlistTab() {
   )
 }
 
-const SORTS: { key: WishSort; label: string; high: string; low: string }[] = [
-  { key: 'desire', label: 'Wanted', high: 'most wanted', low: 'least wanted' },
-  { key: 'price', label: 'Price', high: 'priciest', low: 'cheapest' },
-  { key: 'added', label: 'Added', high: 'newest', low: 'oldest' },
-]
-
-/** Sort, direction and whose-wish filter. */
-function FilterBar({ profiles }: { profiles: Profile[] }) {
-  const sort = useUI((s) => s.wishSort)
-  const desc = useUI((s) => s.wishDesc)
+/**
+ * Whose wish, as one compact control.
+ *
+ * Avatars rather than names: with four options plus three sort chips, names
+ * pushed the row onto a second line, and a filter row that changes height as
+ * you use it makes the grid below jump.
+ */
+function OwnerFilter({ profiles }: { profiles: Profile[] }) {
   const owner = useUI((s) => s.wishOwner)
-  const setSort = useUI((s) => s.setWishSort)
-  const toggleDir = useUI((s) => s.toggleWishDir)
   const setOwner = useUI((s) => s.setWishOwner)
 
-  const current = SORTS.find((s) => s.key === sort)!
+  const options: { key: string | null; label: string; node: React.ReactNode; color?: string }[] = [
+    { key: null, label: 'Everyone', node: <span className="text-[11px] font-semibold">All</span> },
+    ...profiles.map((p) => ({
+      key: p.id,
+      label: p.display_name,
+      color: p.color_hex,
+      node: <Avatar profile={p} size={22} />,
+    })),
+    {
+      key: 'shared',
+      label: 'Both of you',
+      node: (
+        <span className="flex items-center">
+          {profiles.slice(0, 2).map((p, i) => (
+            <span
+              key={p.id}
+              className="block h-2 w-2 rounded-full"
+              style={{
+                background: p.color_hex,
+                marginLeft: i === 0 ? 0 : -3,
+                border: '1px solid var(--surface-2)',
+              }}
+            />
+          ))}
+        </span>
+      ),
+    },
+  ]
 
   return (
-    /* One scrolling row rather than wrapping: wrapping pushed the grid down
-       and the number of lines changed as filters were used, which made the
-       whole page jump. */
     <div
-      className="-mx-3 mb-3 flex items-center gap-1.5 overflow-x-auto px-4 pb-1"
-      style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
+      className="ml-1 flex shrink-0 items-center gap-0.5 rounded-full p-0.5"
+      style={{ background: 'var(--surface-3)' }}
     >
-      {SORTS.map((s) => {
-        const on = s.key === sort
+      {options.map((o) => {
+        const active = owner === o.key
         return (
           <button
-            key={s.key}
+            key={String(o.key)}
             onClick={() => {
               fire('snap')
-              // Tapping the active sort flips direction rather than doing
-              // nothing — one control, both jobs.
-              if (on) toggleDir()
-              else setSort(s.key)
+              setOwner(o.key)
             }}
-            className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-3 py-1.5 text-[12px] font-medium"
+            aria-label={o.label}
+            aria-pressed={active}
+            className="grid h-[30px] w-[30px] place-items-center overflow-hidden rounded-full"
             style={{
-              background: on ? 'var(--accent)' : 'var(--surface-2)',
-              color: on ? '#fff' : 'var(--text-dim)',
+              background: active
+                ? (o.color ? `color-mix(in oklab, ${o.color} 34%, transparent)` : 'var(--accent)')
+                : 'transparent',
+              border: active && o.color ? `1.5px solid ${o.color}` : '1.5px solid transparent',
+              color: active ? '#fff' : 'var(--text-dim)',
             }}
           >
-            {s.label}
-            {on && (
-              <motion.span animate={{ rotate: desc ? 0 : 180 }} className="leading-none">
-                ↓
-              </motion.span>
-            )}
+            {o.node}
           </button>
         )
       })}
-
-      <span
-        className="mx-0.5 h-4 w-px shrink-0"
-        style={{ background: 'var(--border-strong)' }}
-      />
-
-      <OwnerPill active={owner === null} onClick={() => setOwner(null)} label="All" />
-      {profiles.map((p) => (
-        <OwnerPill
-          key={p.id}
-          active={owner === p.id}
-          onClick={() => setOwner(p.id)}
-          color={p.color_hex}
-          avatar={<Avatar profile={p} size={16} />}
-          label={p.display_name}
-        />
-      ))}
-      <OwnerPill
-        active={owner === 'shared'}
-        onClick={() => setOwner('shared')}
-        label="Both"
-      />
-
-      {(sort !== 'desire' || !desc || owner !== null) && (
-        <span
-          className="shrink-0 whitespace-nowrap pl-1 pr-2 text-[11px]"
-          style={{ color: 'var(--text-faint)' }}
-        >
-          {desc ? current.high : current.low}
-        </span>
-      )}
     </div>
   )
-}
-
-function OwnerPill({
-  active,
-  onClick,
-  label,
-  color,
-  avatar,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-  color?: string
-  avatar?: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={() => {
-        fire('snap')
-        onClick()
-      }}
-      className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[12px] font-medium"
-      style={{
-        background: active
-          ? color
-            ? `color-mix(in oklab, ${color} 30%, transparent)`
-            : 'var(--accent-soft)'
-          : 'var(--surface-2)',
-        border: `1px solid ${active ? (color ?? 'var(--accent-muted)') : 'transparent'}`,
-        color: active ? 'var(--text)' : 'var(--text-dim)',
-      }}
-    >
-      {avatar && (
-        <span className="grid h-4 w-4 place-items-center overflow-hidden rounded-full text-[10px]">
-          {avatar}
-        </span>
-      )}
-      {label}
-    </button>
-  )
-}
-
-const DESIRE_COLOR: Record<Desire, string> = {
-  1: '#64748b',
-  2: '#3aa0ff',
-  3: 'var(--accent)',
-  4: '#f5a524',
-  5: '#ff4d4d',
 }
 
 /**
@@ -298,12 +235,6 @@ function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] 
   // Level 1 barely tints, level 5 floods the card.
   const fill = 8 + wish.desire_level * 17
 
-  function bumpDesire() {
-    const next = ((wish.desire_level % 5) + 1) as Desire
-    fire('snap')
-    void dataActions.patchRow('wishlist_items', wish.id, { desire_level: next })
-  }
-
   return (
     <motion.div
       layout
@@ -366,27 +297,13 @@ function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] 
       </div>
 
       <div className="relative z-10 flex items-end justify-between gap-2">
-        <button
-          onClick={bumpDesire}
-          aria-label={`Want level: ${DESIRE_META[wish.desire_level].label}. Tap to change.`}
-          className="flex flex-col gap-1"
-        >
-          <span className="flex items-end gap-[3px]">
-            {([1, 2, 3, 4, 5] as Desire[]).map((n) => (
-              <span
-                key={n}
-                className="w-[5px] rounded-full"
-                style={{
-                  height: 5 + n * 2.5,
-                  background: n <= wish.desire_level ? color : 'var(--surface-3)',
-                }}
-              />
-            ))}
-          </span>
-          <span className="text-[10px] font-medium" style={{ color: 'var(--text-faint)' }}>
-            {DESIRE_META[wish.desire_level].label}
-          </span>
-        </button>
+        <DesireMeter
+          value={wish.desire_level}
+          onChange={(next) =>
+            void dataActions.patchRow('wishlist_items', wish.id, { desire_level: next })
+          }
+          showLabel
+        />
 
         <div className="flex items-center gap-1">
           {owner && (

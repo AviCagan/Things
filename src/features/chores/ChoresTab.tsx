@@ -7,6 +7,8 @@ import { CooldownRing } from '@/components/primitives/CooldownRing'
 import { ClaimChip } from '@/components/primitives/ClaimChip'
 import { useData, dataActions } from '@/store/useData'
 import { useProfile } from '@/store/useProfile'
+import { useUI } from '@/store/useUI'
+import { SortBar, compareBy } from '@/components/shell/SortBar'
 import { useNow } from '@/lib/ticker'
 import {
   cooldownProgress,
@@ -22,10 +24,11 @@ export function ChoresTab() {
   const profileId = useProfile((s) => s.profileId)
   const now = useNow()
 
+  const sortBy = useUI((s) => s.sortBy.chores)
+  const desc = useUI((s) => s.sortDesc.chores)
+
   const { active, resting, done } = useMemo(() => {
-    const sorted = [...chores].sort((a, b) =>
-      a.urgency !== b.urgency ? b.urgency - a.urgency : b.sort_order - a.sort_order,
-    )
+    const sorted = [...chores].sort(compareBy(sortBy, desc))
     return {
       active: sorted.filter((c) => !c.is_done && !isResting(c, now)),
       // Soonest to return, first.
@@ -34,13 +37,21 @@ export function ChoresTab() {
         .sort((a, b) => (a.next_due_at ?? '').localeCompare(b.next_due_at ?? '')),
       done: sorted.filter((c) => c.is_done && !c.is_recurring),
     }
-  }, [chores, now])
+  }, [chores, now, sortBy, desc])
 
   const nameOf = (id: string) =>
     profiles.find((p) => p.id === id)?.display_name ?? 'Someone'
 
   return (
     <Screen title="Chores" count={active.length}>
+      <SortBar
+        tab="chores"
+        options={[
+          { key: 'urgency', label: 'Urgency' },
+          { key: 'recurring', label: 'Repeats' },
+          { key: 'added', label: 'Added' },
+        ]}
+      />
       {active.length === 0 && resting.length === 0 && done.length === 0 ? (
         <EmptyState
           icon={<Icon name="repeat" size={44} strokeWidth={1.5} />}

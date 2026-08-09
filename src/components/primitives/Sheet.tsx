@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useDragControls } from 'motion/react'
 import { Icon } from './Icon'
 import { fire } from '@/lib/haptics'
 
@@ -17,6 +17,8 @@ export function Sheet({
   children: ReactNode
   maxHeight?: string
 }) {
+  const dragControls = useDragControls()
+
   return (
     <AnimatePresence>
       {open && (
@@ -39,6 +41,11 @@ export function Sheet({
             exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 380, damping: 34 }}
             drag="y"
+            // Only the handle and title start a drag. With the whole sheet
+            // draggable, any control you drag inside it — the colour wheel,
+            // a slider — pulled the sheet down instead of doing its job.
+            dragListener={false}
+            dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
             onDragEnd={(_, info) => {
@@ -55,7 +62,11 @@ export function Sheet({
               maxHeight,
             }}
           >
-            <div className="grid shrink-0 place-items-center pt-3 pb-1">
+            <div
+              className="grid shrink-0 cursor-grab place-items-center pt-3 pb-2"
+              style={{ touchAction: 'none' }}
+              onPointerDown={(e) => dragControls.start(e)}
+            >
               <div
                 className="h-1 w-10 rounded-full"
                 style={{ background: 'var(--border-strong)' }}
@@ -63,7 +74,15 @@ export function Sheet({
             </div>
 
             {title && (
-              <div className="flex shrink-0 items-center justify-between px-5 pb-4 pt-1">
+              <div
+                className="flex shrink-0 items-center justify-between px-5 pb-4 pt-1"
+                style={{ touchAction: 'none' }}
+                onPointerDown={(e) => {
+                  // Not from the close button — that would swallow the tap.
+                  if ((e.target as HTMLElement).closest('button')) return
+                  dragControls.start(e)
+                }}
+              >
                 <h2 className="text-[17px] font-semibold">{title}</h2>
                 <button
                   onClick={() => {

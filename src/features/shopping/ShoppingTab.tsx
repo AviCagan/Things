@@ -6,6 +6,7 @@ import { Icon } from '@/components/primitives/Icon'
 import { useData, dataActions } from '@/store/useData'
 import { useProfile } from '@/store/useProfile'
 import { useUI } from '@/store/useUI'
+import { SortBar, compareBy } from '@/components/shell/SortBar'
 import { fire } from '@/lib/haptics'
 import { StoresSheet } from './StoresSheet'
 import { TripSheet } from './TripSheet'
@@ -20,6 +21,9 @@ export function ShoppingTab() {
   const profileId = useProfile((s) => s.profileId)
   const openSheet = useUI((s) => s.openSheet)
 
+  const sortBy = useUI((s) => s.sortBy.shopping)
+  const desc = useUI((s) => s.sortDesc.shopping)
+
   const groups = useMemo(() => {
     const active = items.filter((i) => !i.is_done)
     const byStore = new Map<string, ShoppingItem[]>()
@@ -29,11 +33,7 @@ export function ShoppingTab() {
       list.push(item)
       byStore.set(key, list)
     }
-    for (const list of byStore.values()) {
-      list.sort((a, b) =>
-        a.urgency !== b.urgency ? b.urgency - a.urgency : b.sort_order - a.sort_order,
-      )
-    }
+    for (const list of byStore.values()) list.sort(compareBy(sortBy, desc))
 
     const ordered = [...stores]
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -47,7 +47,7 @@ export function ShoppingTab() {
       done: items.filter((i) => i.is_done),
       activeCount: active.length,
     }
-  }, [items, stores])
+  }, [items, stores, sortBy, desc])
 
   const nameOf = (id: string) =>
     profiles.find((p) => p.id === id)?.display_name ?? 'Someone'
@@ -87,6 +87,13 @@ export function ShoppingTab() {
           </div>
         }
       >
+        <SortBar
+          tab="shopping"
+          options={[
+            { key: 'urgency', label: 'Urgency' },
+            { key: 'added', label: 'Added' },
+          ]}
+        />
         {groups.activeCount === 0 && groups.done.length === 0 ? (
           <EmptyState
             icon={<Icon name="cart" size={44} strokeWidth={1.5} />}

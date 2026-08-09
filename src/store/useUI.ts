@@ -16,6 +16,8 @@ type Sheet =
   | { kind: 'item'; table: 'todos' | 'chores' | 'shopping_items'; id: string }
   | { kind: 'wish'; id: string }
 
+/** Every sort key any tab offers. Each tab exposes only the ones it means. */
+export type SortKey = 'urgency' | 'added' | 'recurring' | 'desire' | 'price' | 'store'
 export type WishSort = 'desire' | 'price' | 'added'
 /** null = everyone; 'shared' = the ones marked as for both of you. */
 export type WishOwner = string | 'shared' | null
@@ -28,6 +30,9 @@ interface UIState {
   wishSort: WishSort
   wishDesc: boolean
   wishOwner: WishOwner
+  // Sort per tab, so switching tabs doesn't reset what you chose.
+  sortBy: Record<TabKey, SortKey>
+  sortDesc: Record<TabKey, boolean>
   setTab: (tab: TabKey) => void
   openSheet: (sheet: Sheet) => void
   closeSheet: () => void
@@ -35,6 +40,8 @@ interface UIState {
   setWishSort: (sort: WishSort) => void
   toggleWishDir: () => void
   setWishOwner: (owner: WishOwner) => void
+  setSort: (tab: TabKey, key: SortKey) => void
+  toggleSortDir: (tab: TabKey) => void
 }
 
 export const useUI = create<UIState>((set) => ({
@@ -44,6 +51,13 @@ export const useUI = create<UIState>((set) => ({
   wishSort: 'desire',
   wishDesc: true,
   wishOwner: null,
+  sortBy: {
+    todos: 'urgency',
+    chores: 'urgency',
+    shopping: 'urgency',
+    wishlist: 'desire',
+  },
+  sortDesc: { todos: true, chores: true, shopping: true, wishlist: true },
   setTab: (tab) => set({ tab }),
   openSheet: (sheet) => set({ sheet }),
   closeSheet: () => set({ sheet: { kind: 'none' } }),
@@ -51,6 +65,9 @@ export const useUI = create<UIState>((set) => ({
   setWishSort: (wishSort) => set({ wishSort }),
   toggleWishDir: () => set((s) => ({ wishDesc: !s.wishDesc })),
   setWishOwner: (wishOwner) => set({ wishOwner }),
+  setSort: (tab, key) => set((s) => ({ sortBy: { ...s.sortBy, [tab]: key } })),
+  toggleSortDir: (tab) =>
+    set((s) => ({ sortDesc: { ...s.sortDesc, [tab]: !s.sortDesc[tab] } })),
 }))
 
 export const tabIndex = (tab: TabKey): number =>

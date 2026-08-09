@@ -9,15 +9,8 @@ import { parsePrice } from '@/lib/money'
 import { unfurl, isUrl, domainOf } from '@/lib/unfurl'
 import { newId } from '@/data/adapter'
 import { toast } from 'sonner'
-import { DESIRE_META, type Desire } from '@/data/types'
-
-const DESIRE_COLOR: Record<Desire, string> = {
-  1: '#64748b',
-  2: '#3aa0ff',
-  3: 'var(--accent)',
-  4: '#f5a524',
-  5: '#ff4d4d',
-}
+import { DesireMeter } from '@/components/primitives/DesireMeter'
+import { type Desire } from '@/data/types'
 
 /**
  * Wishlist add bar. Uses the want-meter rather than the urgency dot, matching
@@ -221,33 +214,12 @@ function WishBar({
         boxShadow: 'var(--shadow-dock)',
       }}
     >
-      <button
-        onClick={() => {
-          setDesire((((desire % 5) + 1) as Desire))
-          fire('snap')
-        }}
-        type="button"
-        aria-label={`Want level: ${DESIRE_META[desire].label}. Tap to change.`}
-        className="flex h-8 shrink-0 items-center gap-[3px] rounded-full px-2.5"
-        style={{
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-        }}
+      <span
+        className="flex h-8 shrink-0 items-center rounded-full px-2.5"
+        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
       >
-        {([1, 2, 3, 4, 5] as Desire[]).map((n) => (
-          <motion.span
-            key={n}
-            // Centred rather than bottom-aligned: inside a small pill a
-            // baseline-anchored meter reads as misaligned rather than as a scale.
-            animate={{ height: 5 + n * 2 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-            className="block w-[3px] shrink-0 rounded-full"
-            style={{
-              background: n <= desire ? DESIRE_COLOR[desire] : 'var(--surface-3)',
-            }}
-          />
-        ))}
-      </button>
+        <DesireMeter value={desire} onChange={setDesire} size="sm" />
+      </span>
 
       <input
         ref={inputRef}

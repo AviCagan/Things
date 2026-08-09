@@ -6,6 +6,7 @@ import { useUI } from '@/store/useUI'
 import { fire } from '@/lib/haptics'
 import { AddressInput } from '@/components/primitives/AddressInput'
 import { ColorPicker } from '@/components/primitives/ColorPicker'
+import { ColorSwatchButton } from '@/components/primitives/ColorSwatchButton'
 import type { Store } from '@/data/types'
 
 const PALETTE = [
@@ -109,21 +110,12 @@ export function StoresSheet() {
           )}
 
           <div className="flex flex-wrap items-center gap-2 px-1 pt-1">
-            <button
-              type="button"
+            <ColorSwatchButton
+              value={color}
+              open={wheelOpen}
               onClick={() => {
                 fire('tap')
                 setWheelOpen((v) => !v)
-              }}
-              aria-label="Pick any colour"
-              aria-expanded={wheelOpen}
-              className="h-7 w-7 shrink-0 rounded-full"
-              style={{
-                background:
-                  'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
-                border: wheelOpen
-                  ? '2px solid var(--text)'
-                  : '2px solid var(--border-strong)',
               }}
             />
             {PALETTE.map((c) => (
@@ -134,7 +126,7 @@ export function StoresSheet() {
                   setColor(c)
                 }}
                 aria-label={`Colour ${c}`}
-                className="h-7 w-7 shrink-0 rounded-full"
+                className="h-[34px] w-[34px] shrink-0 rounded-full"
                 style={{
                   background: c,
                   outline: color === c ? '2px solid var(--text)' : 'none',

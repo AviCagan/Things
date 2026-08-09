@@ -10,6 +10,8 @@ import { isIOS, isNative } from '@/lib/platform'
 import { enablePush, pushState, type PushState } from '@/lib/notifications'
 import { fileToAvatarDataUrl, dataUrlBytes } from '@/lib/image'
 import { AddressInput } from '@/components/primitives/AddressInput'
+import { ColorPicker } from '@/components/primitives/ColorPicker'
+import { ColorSwatchButton } from '@/components/primitives/ColorSwatchButton'
 import { AUTO_CLEAR_OPTIONS } from '@/lib/cleanup'
 import { RECURRENCE_PRESETS } from '@/lib/time'
 import { Avatar } from '@/components/primitives/ClaimChip'
@@ -59,6 +61,7 @@ export function SettingsSheet() {
   const [homeCoords, setHomeCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [showHaptics, setShowHaptics] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
+  const [accentWheel, setAccentWheel] = useState(false)
 
   if (!profile || !settings) return null
   const id = profile.id
@@ -83,7 +86,15 @@ export function SettingsSheet() {
           </Row>
 
           <Row label="Accent" stacked>
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <ColorSwatchButton
+                value={settings.accent_hex}
+                open={accentWheel}
+                onClick={() => {
+                  fire('tap')
+                  setAccentWheel((v) => !v)
+                }}
+              />
               {ACCENTS.map((c) => (
                 <button
                   key={c}
@@ -92,7 +103,7 @@ export function SettingsSheet() {
                     set({ accent_hex: c })
                   }}
                   aria-label={`Accent ${c}`}
-                  className="h-8 w-8 rounded-full"
+                  className="h-[34px] w-[34px] shrink-0 rounded-full"
                   style={{
                     background: c,
                     outline: settings.accent_hex === c ? '2px solid var(--text)' : 'none',
@@ -101,6 +112,14 @@ export function SettingsSheet() {
                 />
               ))}
             </div>
+            {accentWheel && (
+              <div className="pt-3">
+                <ColorPicker
+                  value={settings.accent_hex}
+                  onChange={(hex) => set({ accent_hex: hex })}
+                />
+              </div>
+            )}
           </Row>
 
           <Row label="Text size" stacked>
@@ -486,6 +505,7 @@ function NotificationsGroup({
 /** Profile photo: pick, downscale, store. Emoji stays as the fallback. */
 function AvatarRow({ profile }: { profile: Profile }) {
   const [busy, setBusy] = useState(false)
+  const [choosing, setChoosing] = useState(false)
 
   async function pick(file: File | undefined) {
     if (!file) return
@@ -497,6 +517,7 @@ function AvatarRow({ profile }: { profile: Profile }) {
       }
       await dataActions.patchRow('profiles', profile.id, { avatar_url: dataUrl })
       fire('success')
+      setChoosing(false)
     } catch (err) {
       fire('error')
       toast.error(err instanceof Error ? err.message : "Couldn't use that photo")
@@ -528,6 +549,18 @@ function AvatarRow({ profile }: { profile: Profile }) {
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-1.5">
+        {!choosing ? (
+          <button
+            onClick={() => {
+              fire('tap')
+              setChoosing(true)
+            }}
+            className="rounded-full px-3 py-2 text-[12px] font-semibold text-white"
+            style={{ background: 'var(--accent)' }}
+          >
+            {profile.avatar_url ? 'Change' : 'Add photo'}
+          </button>
+        ) : (
         <div className="flex items-center gap-1.5">
           {/* Two inputs rather than one: `capture` opens the camera straight
               away, and without it the picker offers the photo library. There
@@ -568,9 +601,22 @@ function AvatarRow({ profile }: { profile: Profile }) {
               }}
             />
           </label>
-        </div>
 
-        {profile.avatar_url && (
+          <button
+            onClick={() => {
+              fire('tap')
+              setChoosing(false)
+            }}
+            aria-label="Cancel"
+            className="px-1 text-[12px]"
+            style={{ color: 'var(--text-faint)' }}
+          >
+            Cancel
+          </button>
+        </div>
+        )}
+
+        {profile.avatar_url && !choosing && (
           <button
             onClick={() => {
               fire('delete')

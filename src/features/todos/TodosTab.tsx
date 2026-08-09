@@ -5,34 +5,40 @@ import { ListRow } from '@/components/primitives/ListRow'
 import { Icon } from '@/components/primitives/Icon'
 import { useData, dataActions } from '@/store/useData'
 import { useProfile } from '@/store/useProfile'
-import type { Todo, Urgency } from '@/data/types'
-
-/** Urgent first, then newest. Completed items fall out to the Done section. */
-function sortTodos(a: Todo, b: Todo) {
-  if (a.urgency !== b.urgency) return b.urgency - a.urgency
-  return b.sort_order - a.sort_order
-}
+import { useUI } from '@/store/useUI'
+import { SortBar, compareBy } from '@/components/shell/SortBar'
+import type { Urgency } from '@/data/types'
 
 export function TodosTab() {
   const todos = useData((s) => s.todos)
   const profiles = useData((s) => s.profiles)
   const profileId = useProfile((s) => s.profileId)
 
+  const sortBy = useUI((s) => s.sortBy.todos)
+  const desc = useUI((s) => s.sortDesc.todos)
+
   const { active, done } = useMemo(() => {
-    const sorted = [...todos].sort(sortTodos)
+    const sorted = [...todos].sort(compareBy(sortBy, desc))
     return {
       active: sorted.filter((t) => !t.is_done),
       done: sorted
         .filter((t) => t.is_done)
         .sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? '')),
     }
-  }, [todos])
+  }, [todos, sortBy, desc])
 
   const nameOf = (id: string) =>
     profiles.find((p) => p.id === id)?.display_name ?? 'Someone'
 
   return (
     <Screen title="To-do" count={active.length}>
+      <SortBar
+        tab="todos"
+        options={[
+          { key: 'urgency', label: 'Urgency' },
+          { key: 'added', label: 'Added' },
+        ]}
+      />
       {active.length === 0 && done.length === 0 ? (
         <EmptyState
           icon={<Icon name="check" size={44} strokeWidth={1.5} />}

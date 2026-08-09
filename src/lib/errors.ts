@@ -38,7 +38,30 @@ export function isTransient(err: unknown): boolean {
     msg.includes('timed out') ||
     msg.includes('connection') ||
     msg.includes('load failed') ||
-    msg.includes('offline')
+    msg.includes('offline') ||
+    isClockSkew(err)
+  )
+}
+
+/**
+ * "JWT issued at future" and friends.
+ *
+ * The auth server stamps the token with its own clock, then the API validates
+ * that stamp against a clock that can be a second or two behind. For those few
+ * seconds the token looks like it was issued in the future and every request is
+ * refused — which is precisely why the first attempt failed and tapping Try
+ * again a moment later always worked.
+ *
+ * Nothing here is fixable client-side; waiting out the difference is the fix,
+ * so these are treated as retryable rather than fatal.
+ */
+export function isClockSkew(err: unknown): boolean {
+  const msg = errorMessage(err).toLowerCase()
+  return (
+    msg.includes('issued at future') ||
+    msg.includes('issued in the future') ||
+    (msg.includes('jwt') && (msg.includes('future') || msg.includes('not yet valid'))) ||
+    msg.includes('token used before issued')
   )
 }
 
@@ -52,7 +75,7 @@ export function isTransient(err: unknown): boolean {
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  attempts = 3,
+  attempts = 4,
   baseDelayMs = 600,
 ): Promise<T> {
   let lastError: unknown
@@ -64,7 +87,10 @@ export async function withRetry<T>(
       // Only transient failures are worth repeating; a bad password never
       // becomes a good one.
       if (i === attempts - 1 || !isTransient(err)) throw err
-      await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** i))
+      // Clock skew is measured in seconds, so a network-sized backoff is far
+      // too short to outlast it.
+      const base = isClockSkew(err) ? 1500 : baseDelayMs
+      await new Promise((r) => setTimeout(r, base * 2 ** i))
     }
   }
   throw lastError
