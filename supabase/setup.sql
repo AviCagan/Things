@@ -271,7 +271,8 @@ begin
       hours  => case when new.recurrence_unit = 'hours'  then new.recurrence_count else 0 end,
       days   => case when new.recurrence_unit = 'days'   then new.recurrence_count else 0 end,
       weeks  => case when new.recurrence_unit = 'weeks'  then new.recurrence_count else 0 end,
-      months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end
+      months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end,
+      years  => case when new.recurrence_unit = 'years'  then new.recurrence_count else 0 end
     );
   else
     new.next_due_at := null;
@@ -359,14 +360,29 @@ end $$;
 
 -- Things — realtime
 
-alter publication supabase_realtime add table todos;
-alter publication supabase_realtime add table chores;
-alter publication supabase_realtime add table shopping_items;
-alter publication supabase_realtime add table stores;
-alter publication supabase_realtime add table wishlist_items;
-alter publication supabase_realtime add table profile_settings;
-alter publication supabase_realtime add table household_settings;
-alter publication supabase_realtime add table shopping_trips;
+/*
+  ALTER PUBLICATION ... ADD TABLE has no IF NOT EXISTS form, and re-adding a
+  table raises 42710 ("already member of publication"). That aborts the whole
+  script, which is why this is a loop with a guard rather than eight bare
+  statements — running the setup twice has to be harmless.
+*/
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'todos','chores','shopping_items','stores','wishlist_items',
+    'profile_settings','household_settings','shopping_trips'
+  ] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table %I', t);
+    end if;
+  end loop;
+end $$;
 
 /*
   REPLICA IDENTITY FULL is required, not optional, and specifically because RLS

@@ -258,7 +258,8 @@ begin
       hours  => case when new.recurrence_unit = 'hours'  then new.recurrence_count else 0 end,
       days   => case when new.recurrence_unit = 'days'   then new.recurrence_count else 0 end,
       weeks  => case when new.recurrence_unit = 'weeks'  then new.recurrence_count else 0 end,
-      months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end
+      months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end,
+      years  => case when new.recurrence_unit = 'years'  then new.recurrence_count else 0 end
     );
   else
     new.next_due_at := null;
