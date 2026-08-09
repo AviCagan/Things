@@ -28,6 +28,17 @@ jobs:
         with:
           version: latest
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The functions are Deno, so the app's tsc never sees them. Without this
+      # a grammar error reaches the bundler mid-deploy and takes down whichever
+      # functions were queued behind it.
+      - run: npm ci
+      - run: npx vitest run src/lib/functions-syntax.test.ts
+
       - name: Check credentials
         run: |
           if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$PROJECT_REF" ]; then

@@ -143,12 +143,15 @@ Deno.serve(async (req) => {
     const ld = fromJsonLd(html)
     const final = res.url || url
 
+    // Pulled out rather than chained onto the ?? run below: mixing ?? with ||
+    // in one expression is a syntax error, not a style preference, and every
+    // engine rejects the whole file for it.
+    const pageTitle = decodeEntities(
+      html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? '',
+    ).trim()
+
     const result: Unfurled = {
-      title:
-        meta(html, 'og:title') ??
-        ld.name ??
-        decodeEntities(html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? '') ||
-        null,
+      title: meta(html, 'og:title') ?? ld.name ?? (pageTitle || null),
       image: absolute(meta(html, 'og:image') ?? ld.image, final),
       priceCents:
         ld.price ??
