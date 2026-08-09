@@ -57,6 +57,10 @@ create table if not exists household_settings (
   home_lng     double precision,
   -- Days to keep finished items. 0 disables clearing.
   auto_clear_days integer not null default 7,
+  -- Secret in the calendar feed URL. null = calendar sync off.
+  calendar_token text,
+  -- Minutes of warning the calendar gives before a chore is due. 0 = none.
+  calendar_alarm_minutes integer not null default 0,
   updated_at   timestamptz not null default now()
 );
 

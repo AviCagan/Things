@@ -141,8 +141,15 @@ export async function geocode(
 export interface PlaceSuggestion extends LatLng {
   /** One-line label for the dropdown. */
   label: string
-  /** What gets written into the field when picked. */
+  /** Full street address. */
   address: string
+  /**
+   * Just the place's own name, e.g. "Taster's Market".
+   *
+   * Kept separate from `address` so a name field can be filled with a name
+   * rather than the entire postal address.
+   */
+  name: string | null
 }
 
 /**
@@ -174,14 +181,14 @@ export async function searchPlaces(
       const p = f.properties ?? {}
       const street = [p.housenumber, p.street].filter(Boolean).join(' ')
       const locality = [p.city, p.state, p.postcode].filter(Boolean).join(', ')
-      const address = [p.name && p.name !== street ? p.name : '', street, locality]
-        .filter(Boolean)
-        .join(', ')
+      const name = p.name && p.name !== street ? p.name : null
+      const address = [name, street, locality].filter(Boolean).join(', ')
       return {
         lat: c[1],
         lng: c[0],
-        label: address || (p.name ?? q),
-        address: address || (p.name ?? q),
+        label: address || name || q,
+        address: address || name || q,
+        name,
       }
     })
     .filter((x): x is PlaceSuggestion => x !== null)

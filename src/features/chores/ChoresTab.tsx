@@ -10,6 +10,9 @@ import { useProfile } from '@/store/useProfile'
 import { useUI } from '@/store/useUI'
 import { SortBar, compareBy } from '@/components/shell/SortBar'
 import { useNow } from '@/lib/ticker'
+import { googleEventUrl } from '@/lib/calendar'
+import { openExternal } from '@/routing/deeplink'
+import { fire } from '@/lib/haptics'
 import {
   cooldownProgress,
   describeRecurrence,
@@ -87,6 +90,7 @@ export function ChoresTab() {
                       </span>
                     ) : undefined
                   }
+                  trailing={<AddToCalendar chore={chore} />}
                   onComplete={() => dataActions.completeChore(chore, profileId)}
                   onClaim={() =>
                     profileId &&
@@ -170,6 +174,33 @@ export function ChoresTab() {
   )
 }
 
+/**
+ * One chore onto Google Calendar, right now.
+ *
+ * The subscribed feed in Settings covers the steady state, but Google refreshes
+ * it on its own slow schedule — so this exists for when you want something on
+ * the calendar this minute. Only recurring chores have a date to land on.
+ */
+function AddToCalendar({ chore }: { chore: Chore }) {
+  const url = googleEventUrl(chore)
+  if (!url) return null
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation()
+        fire('tap')
+        openExternal(url)
+      }}
+      aria-label={`Add ${chore.title} to Google Calendar`}
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-full"
+      style={{ color: 'var(--text-faint)' }}
+    >
+      <Icon name="calendar" size={15} />
+    </button>
+  )
+}
+
 function RestingCard({
   chore,
   now,
@@ -230,6 +261,7 @@ function RestingCard({
         </div>
       ) : (
         <>
+          <AddToCalendar chore={chore} />
           <ClaimChip claimedBy={chore.claimed_by} profiles={profiles} size={26} />
           <button
             onClick={() => setConfirming(true)}

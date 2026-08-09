@@ -14,9 +14,18 @@ import { ColorPicker } from '@/components/primitives/ColorPicker'
 import { ColorSwatchButton } from '@/components/primitives/ColorSwatchButton'
 import { AUTO_CLEAR_OPTIONS } from '@/lib/cleanup'
 import { RECURRENCE_PRESETS } from '@/lib/time'
+import {
+  ALARM_OPTIONS,
+  feedUrl,
+  googleSubscribeUrl,
+  newCalendarToken,
+  webcalUrl,
+} from '@/lib/calendar'
+import { openExternal, copyToClipboard } from '@/routing/deeplink'
+import { isConfigured } from '@/lib/env'
 import { Avatar } from '@/components/primitives/ClaimChip'
 import { toast } from 'sonner'
-import type { Profile } from '@/data/types'
+import type { HouseholdSettings, Profile } from '@/data/types'
 import type {
   HapticIntensity,
   NavApp,
@@ -367,7 +376,27 @@ export function SettingsSheet() {
           )}
         </Group>
 
+        <CalendarGroup household={household} />
+
         <NotificationsGroup profileId={id} settings={settings} onSet={set} />
+
+        <Group label="Help">
+          <button
+            onClick={() => {
+              fire('tap')
+              closeSheet()
+              useUI.getState().startTour()
+            }}
+            className="flex items-center justify-between rounded-2xl px-4 py-4"
+            style={{ background: 'var(--surface-2)' }}
+          >
+            <span className="flex items-center gap-2.5 text-[14px]">
+              <Icon name="sparkle" size={16} />
+              Show me around again
+            </span>
+            <Icon name="chevron" size={15} />
+          </button>
+        </Group>
 
         <Group label="Account">
           <button
@@ -387,6 +416,186 @@ export function SettingsSheet() {
         </Group>
       </div>
     </Sheet>
+  )
+}
+
+/**
+ * Google Calendar sync.
+ *
+ * Two mechanisms, because neither alone is good enough. The feed keeps every
+ * recurring chore in step forever but refreshes on Google's schedule, which is
+ * slow. The per-chore link on the Chores tab lands instantly but is one event
+ * at a time. Both are surfaced rather than pretending the feed is live.
+ */
+function CalendarGroup({ household }: { household: HouseholdSettings | undefined }) {
+  const [copied, setCopied] = useState(false)
+  const [confirmNew, setConfirmNew] = useState(false)
+
+  const token = household?.calendar_token ?? null
+  const alarm = household?.calendar_alarm_minutes ?? 0
+  const url = feedUrl(token)
+
+  const patch = (p: Partial<HouseholdSettings>) =>
+    void dataActions.patchRow('household_settings', 'singleton', p)
+
+  if (!isConfigured()) {
+    return (
+      <Group label="Calendar">
+        <div className="rounded-2xl px-4 py-3.5" style={{ background: 'var(--surface-2)' }}>
+          <div className="text-[14px]">Google Calendar sync</div>
+          <p className="pt-1 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+            Needs the Supabase connection — the calendar feed is served from
+            there. Everything else in the app works without it.
+          </p>
+        </div>
+      </Group>
+    )
+  }
+
+  return (
+    <Group label="Calendar">
+      <Toggle
+        label="Sync recurring chores"
+        hint="Publishes a private calendar Google can subscribe to"
+        value={token != null}
+        onChange={(on) => patch({ calendar_token: on ? newCalendarToken() : null })}
+      />
+
+      {token && (
+        <>
+          <button
+            onClick={() => {
+              fire('success')
+              openExternal(googleSubscribeUrl(token))
+            }}
+            className="flex items-center justify-between rounded-2xl px-4 py-4"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+          >
+            <span className="flex items-center gap-2.5 text-[14px] font-semibold">
+              <Icon name="calendar" size={17} />
+              Add to Google Calendar
+            </span>
+            <Icon name="chevron" size={15} />
+          </button>
+
+          <div
+            className="flex flex-col gap-2 rounded-2xl px-4 py-3.5"
+            style={{ background: 'var(--surface-2)' }}
+          >
+            <span className="text-[14px]">Calendar link</span>
+            <p
+              className="break-all rounded-xl px-3 py-2 text-[11px]"
+              style={{ background: 'var(--surface)', color: 'var(--text-faint)' }}
+            >
+              {url}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  fire('success')
+                  void copyToClipboard(url)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1600)
+                }}
+                className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-medium"
+                style={{ background: 'var(--surface-3)' }}
+              >
+                <Icon name="copy" size={14} />
+                {copied ? 'Copied' : 'Copy link'}
+              </button>
+              {/* webcal: hands straight to the phone's calendar app, which is
+                  the one-tap path on iOS where Google's web flow is awkward. */}
+              <button
+                onClick={() => {
+                  fire('tap')
+                  openExternal(webcalUrl(token))
+                }}
+                className="rounded-full px-3.5 py-2 text-[13px] font-medium"
+                style={{ background: 'var(--surface-3)' }}
+              >
+                Open on this phone
+              </button>
+            </div>
+            <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              Anyone with this link can see your chores. Nothing else — it can't
+              change anything.
+            </p>
+          </div>
+
+          <Row label="Remind me before it's due" stacked>
+            <div className="flex flex-wrap gap-1.5 pt-2">
+              {ALARM_OPTIONS.map((o) => {
+                const on = alarm === o.minutes
+                return (
+                  <button
+                    key={o.minutes}
+                    onClick={() => {
+                      fire('snap')
+                      patch({ calendar_alarm_minutes: o.minutes })
+                    }}
+                    className="rounded-full px-3 py-2 text-[13px] font-medium"
+                    style={{
+                      background: on ? 'var(--accent)' : 'var(--surface-3)',
+                      color: on ? '#fff' : 'var(--text-dim)',
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="pt-2 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              Google refreshes a subscribed calendar on its own schedule —
+              usually a few hours, sometimes a day. For something you want on
+              the calendar right now, use the calendar button on a chore.
+            </p>
+          </Row>
+
+          {confirmNew ? (
+            <div
+              className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5"
+              style={{ background: 'var(--surface-2)' }}
+            >
+              <span className="text-[13px]" style={{ color: 'var(--text-dim)' }}>
+                The old link stops working and you'd re-subscribe.
+              </span>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  onClick={() => {
+                    fire('warning')
+                    patch({ calendar_token: newCalendarToken() })
+                    setConfirmNew(false)
+                    toast.success('New calendar link created')
+                  }}
+                  className="rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
+                  style={{ background: 'var(--danger)' }}
+                >
+                  Do it
+                </button>
+                <button
+                  onClick={() => setConfirmNew(false)}
+                  className="rounded-full px-3 py-1.5 text-[12px]"
+                  style={{ color: 'var(--text-dim)' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                fire('tap')
+                setConfirmNew(true)
+              }}
+              className="px-1 text-left text-[12px]"
+              style={{ color: 'var(--text-faint)' }}
+            >
+              Regenerate the link
+            </button>
+          )}
+        </>
+      )}
+    </Group>
   )
 }
 

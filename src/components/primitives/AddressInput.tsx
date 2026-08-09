@@ -14,6 +14,7 @@ export function AddressInput({
   value,
   onChange,
   onPick,
+  fillWith = 'address',
   placeholder = 'Start typing an address…',
   className,
   style,
@@ -21,6 +22,12 @@ export function AddressInput({
   value: string
   onChange: (v: string) => void
   onPick?: (place: PlaceSuggestion) => void
+  /**
+   * What picking a suggestion writes into this field. A *name* field wants
+   * "Taster's Market", not "Taster's Market, 330 Bradley Avenue, New York…".
+   * Places without their own name fall back to the address either way.
+   */
+  fillWith?: 'address' | 'name'
   placeholder?: string
   className?: string
   style?: React.CSSProperties
@@ -66,7 +73,7 @@ export function AddressInput({
   function pick(s: PlaceSuggestion) {
     fire('snap')
     justPicked.current = true
-    onChange(s.address)
+    onChange(fillWith === 'name' ? (s.name ?? s.address) : s.address)
     onPick?.(s)
     setOpen(false)
     setSuggestions([])

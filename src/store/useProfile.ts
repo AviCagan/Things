@@ -138,6 +138,9 @@ export async function ensureSeeded(): Promise<void> {
       home_lat: null,
       home_lng: null,
       auto_clear_days: 7,
+      // Calendar sync is opt-in: no token means no feed to leak.
+      calendar_token: null,
+      calendar_alarm_minutes: 0,
       updated_at: nowIso(),
     }
     await adapter.insert('household_settings', h)

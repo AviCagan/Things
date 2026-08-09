@@ -45,6 +45,19 @@ in one go, and it's safe to re-run.
 
 </details>
 
+> **Already ran `setup.sql` before?** It's kept current, so re-running it is the
+> simplest way to catch up. If you'd rather apply only what's new, the
+> numbered add-ons each stand alone and are safe to run twice:
+>
+> | File | Adds |
+> |---|---|
+> | `006_avatars.sql` | Profile photos |
+> | `007_list_settings.sql` | Auto-clearing finished items, custom repeat quick picks, yearly chores |
+> | `008_calendar.sql` | Google Calendar sync |
+>
+> Without `007`, setting a chore to repeat *yearly* fails; without `006`,
+> changing a profile photo does.
+
 ## 3. Create the household account
 
 This is what the PIN unlocks. Go to **Authentication → Users** — or straight to
@@ -172,6 +185,42 @@ phone.
   use, but it is not the guarantee a text message would be. If it disappoints,
   the `phone_e164` column and the sender's structure are already in place to
   add SMS as a second channel.
+
+---
+
+## Google Calendar (optional)
+
+Puts recurring chores on a calendar you already look at. No Google account
+linking, no OAuth — the app publishes a private calendar feed and Google
+subscribes to the URL.
+
+```bash
+supabase functions deploy calendar --no-verify-jwt
+```
+
+`--no-verify-jwt` is not optional. Google fetches the feed with no headers you
+control, so a function that demanded an `Authorization` header would reject
+every refresh. What protects the feed instead is a random token in the URL,
+stored in `household_settings.calendar_token`. Run `008_calendar.sql` first if
+you haven't.
+
+Then in the app: **Settings → Calendar → Sync recurring chores**, and tap **Add
+to Google Calendar**. On an iPhone, *Open on this phone* hands the same feed to
+the built-in Calendar app instead, which is the shorter route there.
+
+### What to expect
+
+- The feed is **read-only** and only ever contains chore names and times.
+  Anyone with the link can see them and change nothing. *Regenerate the link*
+  in Settings kills the old URL immediately.
+- **Google refreshes subscribed calendars on its own schedule** — commonly a
+  few hours, sometimes closer to a day, and nothing in the feed can hurry it
+  along. This is a Google behaviour, not a bug in the app.
+- Because of that delay, each repeating chore also has a **calendar button**
+  on the Chores tab that drops that one chore onto your calendar right now,
+  recurrence included.
+- **Remind me before it's due** adds an alarm to every event in the feed, so
+  the reminder comes from your calendar rather than from the app.
 
 ---
 

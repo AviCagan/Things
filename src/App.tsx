@@ -15,6 +15,7 @@ import { WishlistTab } from './features/wishlist/WishlistTab'
 import { WishAddBar } from './features/wishlist/WishAddBar'
 import { SettingsSheet } from './features/settings/SettingsSheet'
 import { PinGate } from './components/shell/PinGate'
+import { Tour, tourSeen } from './components/shell/Tour'
 import { useData, dataActions } from './store/useData'
 import {
   applySettings,
@@ -104,6 +105,17 @@ export default function App() {
   useEffect(() => {
     applySettings(settings)
   }, [settings])
+
+  // The walkthrough, once per person per device. It runs after the profile is
+  // chosen rather than on the select screen, so every step has a real tab
+  // underneath it to point at.
+  useEffect(() => {
+    if (boot !== 'ready' || !profileId || tourSeen(profileId)) return
+    // One frame of the app first — opening straight onto a dimmed overlay
+    // reads as a loading screen rather than a welcome.
+    const timer = setTimeout(() => useUI.getState().startTour(), 450)
+    return () => clearTimeout(timer)
+  }, [boot, profileId])
 
   if (boot === 'locked') {
     return (
@@ -223,6 +235,7 @@ export default function App() {
 
       <TabDock />
       <SettingsSheet />
+      <Tour />
       <PulseLayer />
       <Toaster
         position="top-center"

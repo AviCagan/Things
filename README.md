@@ -7,7 +7,7 @@ and you're in.
 | | |
 |---|---|
 | **To-do** | Quick-add, urgency, either of you can claim an item |
-| **Chores** | Same, plus recurring chores that rest after each time and come back on their own |
+| **Chores** | Same, plus recurring chores that rest after each time and come back on their own — and sync to Google Calendar |
 | **Shopping** | Grouped by store, with a trip planner that works out the driving order |
 | **Wishlist** | Things you want for yourselves, ranked by how badly |
 
@@ -88,6 +88,10 @@ Worth knowing up front rather than discovering later:
   would be.
 - **The routing services are free and unpromised.** OSRM's demo server has no
   SLA, so there's a haversine fallback that labels its estimates as estimates.
+- **Google refreshes a subscribed calendar when it feels like it** — often a
+  few hours, sometimes a day, and no header in the feed can hurry it. So each
+  repeating chore also carries a button that puts that one chore on the
+  calendar immediately.
 - **The Supabase key in the bundle is public.** That's why the database is
   gated behind a one-time PIN and an authenticated session, and why turning off
   email signups in the dashboard actually matters.
@@ -104,5 +108,5 @@ src/
   routing/    geocoding, OSRM, solver, maps deep links
   features/   the four tabs plus settings
   components/ primitives (swipe row, urgency wheel, sheets) and shell
-supabase/     SQL migrations, the notify Edge Function, setup guide
+supabase/     SQL migrations, the notify/unfurl/calendar Edge Functions, setup guide
 ```

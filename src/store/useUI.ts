@@ -26,6 +26,8 @@ interface UIState {
   tab: TabKey
   sheet: Sheet
   highlightId: string | null
+  /** The walkthrough. Shown once per person per device, replayable from Settings. */
+  tour: boolean
   // Wishlist view state lives here so it survives switching tabs.
   wishSort: WishSort
   wishDesc: boolean
@@ -42,12 +44,15 @@ interface UIState {
   setWishOwner: (owner: WishOwner) => void
   setSort: (tab: TabKey, key: SortKey) => void
   toggleSortDir: (tab: TabKey) => void
+  startTour: () => void
+  endTour: () => void
 }
 
 export const useUI = create<UIState>((set) => ({
   tab: 'todos',
   sheet: { kind: 'none' },
   highlightId: null,
+  tour: false,
   wishSort: 'desire',
   wishDesc: true,
   wishOwner: null,
@@ -68,6 +73,10 @@ export const useUI = create<UIState>((set) => ({
   setSort: (tab, key) => set((s) => ({ sortBy: { ...s.sortBy, [tab]: key } })),
   toggleSortDir: (tab) =>
     set((s) => ({ sortDesc: { ...s.sortDesc, [tab]: !s.sortDesc[tab] } })),
+  // The tour drives the tab underneath it, so it always starts from the first
+  // tab rather than wherever you happened to be.
+  startTour: () => set({ tour: true, sheet: { kind: 'none' }, tab: 'todos' }),
+  endTour: () => set({ tour: false }),
 }))
 
 export const tabIndex = (tab: TabKey): number =>

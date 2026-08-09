@@ -68,6 +68,10 @@ export function StoresSheet() {
           <AddressInput
             value={name}
             onChange={setName}
+            // Keep the name a name. Filling it with the full postal address is
+            // what made stores show up as "Taster's Market, 330 Bradley
+            // Avenue, New York…" in the shopping list.
+            fillWith="name"
             onPick={(place) => {
               setAddress(place.address)
               setCoords({ lat: place.lat, lng: place.lng })
@@ -178,6 +182,22 @@ function StoreRow({ store }: { store: Store }) {
   const [editing, setEditing] = useState(false)
   const [address, setAddress] = useState(store.address ?? '')
   const [picked, setPicked] = useState<{ lat: number; lng: number } | null>(null)
+  // Tap the name to rename. Without this, a store saved under a bad name — the
+  // whole postal address, say — could only be fixed by deleting it and losing
+  // every item filed under it.
+  const [renaming, setRenaming] = useState(false)
+  const [name, setName] = useState(store.name)
+
+  function saveName() {
+    const next = name.trim()
+    setRenaming(false)
+    if (!next || next === store.name) {
+      setName(store.name)
+      return
+    }
+    void dataActions.patchRow('stores', store.id, { name: next })
+    fire('success')
+  }
 
   async function saveAddress() {
     await dataActions.patchRow('stores', store.id, {
@@ -200,7 +220,36 @@ function StoreRow({ store }: { store: Store }) {
     >
       <div className="flex items-center gap-2.5">
         <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: store.color_hex }} />
-        <span className="flex-1 text-[15px] font-medium">{store.name}</span>
+        {renaming ? (
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={saveName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveName()
+              if (e.key === 'Escape') {
+                setName(store.name)
+                setRenaming(false)
+              }
+            }}
+            enterKeyHint="done"
+            className="min-w-0 flex-1 rounded-lg px-2 py-1 text-[15px] font-medium outline-none"
+            style={{ background: 'var(--surface)', border: '1px solid var(--accent-muted)' }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              fire('tap')
+              setRenaming(true)
+            }}
+            aria-label={`Rename ${store.name}`}
+            className="min-w-0 flex-1 truncate py-1 text-left text-[15px] font-medium"
+          >
+            {store.name}
+          </button>
+        )}
         {store.is_online ? (
           <span
             className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px]"

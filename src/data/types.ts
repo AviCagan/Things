@@ -110,6 +110,14 @@ export interface HouseholdSettings {
    * data both of you see rather than just how it looks.
    */
   auto_clear_days: number
+  /**
+   * Secret in the calendar feed URL. null means calendar sync is off — the
+   * Edge Function refuses every request in that state. Regenerating it revokes
+   * any URL already handed out.
+   */
+  calendar_token: string | null
+  /** Minutes before a chore is due that the calendar should remind you. 0 = never. */
+  calendar_alarm_minutes: number
   updated_at: string
 }
 
