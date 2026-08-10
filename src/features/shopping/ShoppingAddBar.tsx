@@ -6,6 +6,10 @@ import { useData, dataActions } from '@/store/useData'
 import { useProfile } from '@/store/useProfile'
 import { useUI } from '@/store/useUI'
 import { fire } from '@/lib/haptics'
+import { unfurl, isUrl, domainOf } from '@/lib/unfurl'
+import { newId } from '@/data/adapter'
+import type { Urgency } from '@/data/types'
+import { toast } from 'sonner'
 
 /** Quick-add carrying a store chip, so items land in the right group as typed. */
 export function ShoppingAddBar() {
@@ -112,10 +116,35 @@ export function ShoppingAddBar() {
       </AnimatePresence>
 
       <QuickAdd
-        placeholder={store ? `Add to ${store.name}…` : 'Add an item…'}
-        onSubmit={(title, urgency) =>
-          dataActions.addShoppingItem(title, urgency, storeId, profileId)
+        placeholder={
+          store?.is_online ? `Add or paste a link to ${store.name}…` : store ? `Add to ${store.name}…` : 'Add an item…'
         }
+        onSubmit={async (title: string, urgency: Urgency) => {
+          // Online stores can carry a product link, the same way wishlist
+          // items do: add immediately using the domain as a placeholder title
+          // so pasting never feels like it's waiting on the network, then fill
+          // in the real title/photo/price once the unfurl comes back.
+          if (store?.is_online && isUrl(title)) {
+            const id = newId()
+            await dataActions.addShoppingItem(domainOf(title), urgency, storeId, profileId, null, {
+              id,
+              url: title,
+            })
+            const preview = await unfurl(title)
+            if (!preview) return
+            await dataActions.patchRow('shopping_items', id, {
+              ...(preview.title ? { title: preview.title.slice(0, 120) } : {}),
+              ...(preview.image ? { image_url: preview.image } : {}),
+              ...(preview.priceCents != null ? { price_cents: preview.priceCents } : {}),
+            })
+            fire('success')
+            toast.success('Filled in from the link', {
+              description: 'Long-press the item to change details.',
+            })
+            return
+          }
+          await dataActions.addShoppingItem(title, urgency, storeId, profileId)
+        }}
         leading={
           <button
             onPointerDown={keepFocus}

@@ -75,6 +75,7 @@ export type NotifyEvent =
   | 'cooldown_ready'
   | 'urgent_added'
   | 'any_added'
+  | 'item_edited'
 
 export interface ProfileSettings {
   profile_id: string
@@ -145,6 +146,8 @@ interface ListItemBase {
   urgency: Urgency
   claimed_by: string | null
   created_by: string | null
+  /** Who last edited the row — distinct from created_by/claimed_by, set on every edit-sheet save. */
+  updated_by: string | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -196,6 +199,10 @@ export interface ShoppingItem extends ListItemBase {
   quantity: string | null
   is_done: boolean
   completed_at: string | null
+  /** A product link for an online-store item, the same way wishlist items carry one. */
+  url: string | null
+  image_url: string | null
+  price_cents: number | null
 }
 
 export interface WishlistItem {
@@ -210,9 +217,25 @@ export interface WishlistItem {
   is_purchased: boolean
   purchased_at: string | null
   created_by: string | null
+  updated_by: string | null
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+/**
+ * A plain-language feed of what changed, independent of push delivery — see
+ * supabase/011_activity_and_edits.sql's log_activity() trigger, which writes
+ * these rows.
+ */
+export interface ActivityLog {
+  id: string
+  table_name: 'todos' | 'chores' | 'shopping_items' | 'wishlist_items'
+  row_id: string
+  title: string
+  event: 'added' | 'edited' | 'completed' | 'uncompleted' | 'claimed' | 'unclaimed' | 'deleted'
+  actor_id: string | null
+  created_at: string
 }
 
 export interface TripStop {

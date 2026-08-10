@@ -20,6 +20,7 @@ export type IconName =
   | 'calendar'
   | 'copy'
   | 'sparkle'
+  | 'pencil'
 
 const PATHS: Record<IconName, string> = {
   check: 'M4 12.5 9 17.5 20 6.5',
@@ -44,6 +45,8 @@ const PATHS: Record<IconName, string> = {
   copy: 'M9 9h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z M5 15H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v1',
   sparkle:
     'M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3Z M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z',
+  pencil:
+    'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z',
 }
 
 interface Props {

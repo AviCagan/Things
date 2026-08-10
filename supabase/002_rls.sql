@@ -24,7 +24,7 @@ begin
   foreach t in array array[
     'profiles','profile_settings','household_settings',
     'todos','chores','stores','shopping_items','wishlist_items',
-    'geocode_cache','shopping_trips','push_subscriptions'
+    'geocode_cache','shopping_trips','push_subscriptions','activity_log'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists household_rw on %I', t);

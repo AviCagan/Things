@@ -186,6 +186,30 @@ async function enableWebPush(profileId: string): Promise<PushState> {
   return 'granted'
 }
 
+/**
+ * Silently re-registers when permission is already granted but the app can't
+ * confirm a subscription is actually saved.
+ *
+ * This exists because of exactly what happened to Jackie: her browser had
+ * granted permission in an earlier session, so Settings showed "Notifications
+ * are on" and the button that would have re-run registration was disabled —
+ * she had no way to know, and no action to take, even after the underlying
+ * save bug was fixed. `Notification.requestPermission()` resolves instantly
+ * with no UI when the decision is already made, so calling this on every
+ * boot is safe: it never prompts, it just quietly makes sure a row exists.
+ * Same idea protects Avi if his FCM token ever rotates.
+ */
+export async function ensurePushRegistered(profileId: string): Promise<void> {
+  if (pushState() !== 'granted') return
+  try {
+    await enablePush(profileId)
+  } catch (err) {
+    // Best-effort — the explicit Settings button remains the recoverable
+    // path, and this runs on every boot anyway.
+    console.error('[push] background re-registration failed', err)
+  }
+}
+
 export async function disablePush(): Promise<void> {
   const sb = supabase()
   if (!isNative() && supportsWebPush()) {

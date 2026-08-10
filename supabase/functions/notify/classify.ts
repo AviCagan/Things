@@ -7,7 +7,12 @@
 // `urgent_added` stopped firing — masked because `any_added` still covered
 // every insert, so nothing looked broken in casual testing.
 
-export type NotifyEvent = 'claim_complete' | 'cooldown_ready' | 'urgent_added' | 'any_added'
+export type NotifyEvent =
+  | 'claim_complete'
+  | 'cooldown_ready'
+  | 'urgent_added'
+  | 'any_added'
+  | 'item_edited'
 
 export interface Push {
   title: string
@@ -37,6 +42,7 @@ export interface Row {
   urgency?: number
   claimed_by?: string | null
   created_by?: string | null
+  updated_by?: string | null
   is_done?: boolean
   last_completed_by?: string | null
 }
@@ -138,6 +144,24 @@ export function classify(body: WebhookBody): Classified | null {
           tab: 'chores',
           itemId: record.id,
           tag: `chore-${record.id}`,
+        },
+      }
+    }
+    // Fallback: anything else that counts as an edit — title, notes, price,
+    // recurrence, and so on. Checked last, same as log_activity()'s trigger,
+    // so a change that's already claim/complete/cooldown doesn't also fire
+    // this one.
+    if (record.updated_by && old_record.updated_by !== record.updated_by) {
+      return {
+        event: 'item_edited',
+        actorId: record.updated_by,
+        targetId: null,
+        push: {
+          title: 'Edited',
+          body: record.title,
+          tab,
+          itemId: record.id,
+          tag: `edit-${record.id}`,
         },
       }
     }

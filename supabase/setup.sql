@@ -1,7 +1,7 @@
 -- Things — complete database setup, in one paste.
 --
 -- Copy this whole file into the Supabase SQL Editor and hit Run, once.
--- It is the same content as 001-004 and 006-010 run in order; those are
+-- It is the same content as 001-004 and 006-011 run in order; those are
 -- kept separate for readability, this is here so setup — and catching a
 -- database up after a feature update — is a single step.
 --
@@ -13,7 +13,6 @@
 -- `alter table ... add column if not exists` statements later in this file
 -- are what make re-running it actually catch a table up, not just the parts
 -- of it that happen to be brand new.
-
 
 -- ==========================================================================
 -- 001_schema.sql
@@ -102,6 +101,10 @@ create table if not exists todos (
   created_by   uuid references profiles(id) on delete set null,
   completed_by uuid references profiles(id) on delete set null,
   completed_at timestamptz,
+  -- Set only by the edit sheet, so an edit can notify the other person and
+  -- the activity log can attribute it. created_by/claimed_by already mean
+  -- something more specific, so this stays separate rather than overloaded.
+  updated_by   uuid references profiles(id) on delete set null,
   sort_order   double precision not null default extract(epoch from now()),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
@@ -114,6 +117,7 @@ create table if not exists chores (
   urgency           smallint not null default 1 check (urgency between 0 and 3),
   claimed_by        uuid references profiles(id) on delete set null,
   created_by        uuid references profiles(id) on delete set null,
+  updated_by        uuid references profiles(id) on delete set null,
 
   is_recurring      boolean not null default false,
   recurrence_count  integer check (recurrence_count > 0),
@@ -183,7 +187,13 @@ create table if not exists shopping_items (
   is_done      boolean not null default false,
   claimed_by   uuid references profiles(id) on delete set null,
   created_by   uuid references profiles(id) on delete set null,
+  updated_by   uuid references profiles(id) on delete set null,
   completed_at timestamptz,
+  -- A product link for an online-store item, the same way wishlist items
+  -- carry one — paste a URL and the unfurl function fills in the rest.
+  url          text,
+  image_url    text,
+  price_cents  integer check (price_cents is null or price_cents >= 0),
   sort_order   double precision not null default extract(epoch from now()),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
@@ -201,10 +211,27 @@ create table if not exists wishlist_items (
   is_purchased boolean not null default false,
   purchased_at timestamptz,
   created_by   uuid references profiles(id) on delete set null,
+  updated_by   uuid references profiles(id) on delete set null,
   sort_order   double precision not null default extract(epoch from now()),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+
+-- A plain-language feed of what changed, independent of push delivery — a
+-- push can be missed or never registered correctly; this is a record either
+-- of you can open and scroll regardless.
+create table if not exists activity_log (
+  id         uuid primary key default gen_random_uuid(),
+  table_name text not null check (table_name in ('todos','chores','shopping_items','wishlist_items')),
+  row_id     uuid not null,
+  title      text not null,
+  event      text not null check (event in
+    ('added','edited','completed','uncompleted','claimed','unclaimed','deleted')),
+  actor_id   uuid references profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists activity_log_created_idx on activity_log (created_at desc);
 
 -- Permanent geocode cache. Combined with denormalising lat/lng onto `stores`,
 -- steady-state trip planning makes zero requests to the free geocoders.
@@ -299,6 +326,10 @@ declare
 begin
   if new.is_recurring and new.last_completed_at is not null then
     if new.recurrence_unit = 'weekdays' then
+      -- Walk forward at most 7 days to the next one that falls on a selected
+      -- weekday. A loop rather than arithmetic: "next Tuesday or Wednesday,
+      -- whichever comes first, from an arbitrary weekday" has no closed form
+      -- worth the complexity at 7 iterations.
       new.next_due_at := null;
       for step in 1..7 loop
         candidate := new.last_completed_at + (step || ' days')::interval;
@@ -342,6 +373,143 @@ begin
   end loop;
 end $$;
 
+/*
+  The activity log's trigger. Deliberately does its own transition detection
+  in plpgsql rather than sharing code with the Edge Function's classify() —
+  different runtime, different job: classify() decides who to push to and
+  what the notification says, this just decides what sentence goes in the
+  in-app feed. Keeping them separate means a change to push copy can't
+  accidentally break the log or vice versa.
+*/
+create or replace function log_activity() returns trigger
+language plpgsql as $$
+declare
+  evt text;
+  actor uuid;
+  item_title text;
+  item_id uuid;
+begin
+  if tg_op = 'INSERT' then
+    evt := 'added';
+    actor := new.created_by;
+    item_title := new.title;
+    item_id := new.id;
+
+  elsif tg_op = 'DELETE' then
+    evt := 'deleted';
+    item_title := old.title;
+    item_id := old.id;
+    -- No session identity survives a delete — best-effort attribution to
+    -- whoever last touched the row. claimed_by only exists on three of the
+    -- four tables this trigger runs on, so it has to sit behind its own
+    -- table check rather than in one coalesce() that assumes every row
+    -- shares the same columns.
+    actor := old.updated_by;
+    if actor is null and tg_table_name in ('todos','chores','shopping_items') then
+      actor := old.claimed_by;
+    end if;
+    if actor is null then
+      actor := old.created_by;
+    end if;
+
+  elsif tg_op = 'UPDATE' then
+    item_title := new.title;
+    item_id := new.id;
+
+    /*
+      Every table-specific field access sits inside a nested IF whose OWN
+      condition references only tg_table_name/evt, with the field access
+      strictly in the body. That distinction matters and it's not stylistic:
+      old/new are the generic trigger RECORD type here, not a fixed row type,
+      and PL/pgSQL resolves a record field reference by preparing the whole
+      boolean expression it appears in as a single SPI query before any
+      short-circuiting happens. That means `tg_table_name = 'chores' and
+      old.last_completed_by is distinct from new.last_completed_by` throws
+      "record has no field" on a todos row EVEN THOUGH the first operand is
+      false — folding the table check and the field access into one
+      condition (as an earlier version of this function did) reproduces
+      exactly the bug this comment is warning about. Only an outer IF whose
+      condition is table-check-only, wrapping an inner statement that
+      references the field, is genuine control flow that skips evaluating it.
+    */
+
+    -- Completion checks run before the claimed/unclaimed check below,
+    -- deliberately: completeChore() sets last_completed_by AND clears
+    -- claimed_by in the same UPDATE (see the cooldown design above), so if
+    -- claimed/unclaimed were checked first every chore completion would log
+    -- as "unclaimed" instead of "completed". Checking completion first means
+    -- an event that changes both is reported as the more informative one.
+
+    if evt is null and tg_table_name in ('todos','shopping_items') then
+      if old.is_done is distinct from new.is_done then
+        evt := case when new.is_done then 'completed' else 'uncompleted' end;
+        actor := new.updated_by;
+        if actor is null and tg_table_name in ('todos','chores','shopping_items') then
+          actor := new.claimed_by;
+        end if;
+        if actor is null then
+          actor := new.created_by;
+        end if;
+      end if;
+    end if;
+
+    if evt is null and tg_table_name = 'chores' then
+      if old.last_completed_by is distinct from new.last_completed_by
+        and new.last_completed_by is not null then
+        evt := 'completed';
+        actor := new.last_completed_by;
+      end if;
+    end if;
+
+    if evt is null and tg_table_name = 'wishlist_items' then
+      if old.is_purchased is distinct from new.is_purchased then
+        evt := case when new.is_purchased then 'completed' else 'uncompleted' end;
+        actor := coalesce(new.updated_by, new.created_by);
+      end if;
+    end if;
+
+    if evt is null and tg_table_name in ('todos','chores','shopping_items') then
+      if (old.claimed_by is null) <> (new.claimed_by is null) then
+        if new.claimed_by is not null then
+          evt := 'claimed';
+          actor := new.claimed_by;
+        else
+          evt := 'unclaimed';
+          actor := old.claimed_by;
+        end if;
+      end if;
+    end if;
+
+    if evt is null and new.updated_by is not null
+      and old.updated_by is distinct from new.updated_by then
+      evt := 'edited';
+      actor := new.updated_by;
+    end if;
+
+    if evt is null then
+      -- Nothing log-worthy — e.g. sort_order shuffling from a drag, or the
+      -- ticker touching next_due_at. Silently skip rather than logging noise.
+      return coalesce(new, old);
+    end if;
+  end if;
+
+  insert into activity_log (table_name, row_id, title, event, actor_id)
+  values (tg_table_name, item_id, item_title, evt, actor);
+
+  return coalesce(new, old);
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['todos','chores','shopping_items','wishlist_items'] loop
+    execute format('drop trigger if exists %I_activity on %I', t, t);
+    execute format(
+      'create trigger %I_activity after insert or update or delete on %I
+         for each row execute function log_activity()', t, t);
+  end loop;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Indices
 -- ---------------------------------------------------------------------------
@@ -356,48 +524,114 @@ create index if not exists push_profile_idx    on push_subscriptions (profile_id
 
 
 -- ==========================================================================
--- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql
+-- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql, 010_fix_push_upsert.sql, 011_activity_and_edits.sql
 -- ==========================================================================
---
--- Folded in here, not left as separate optional files, because of a sharp
--- edge in the block above: `create table if not exists` is a silent no-op on
--- a table that already exists — it does NOT retroactively add a column added
--- to the CREATE TABLE definition later. A household_settings table created
--- before calendar_token existed in this file stays without a calendar_token
--- column even after re-pasting the "complete" setup, with no error to notice.
--- These `alter table ... add column if not exists` statements are what
--- actually apply to a pre-existing table, on a fresh one they're harmless
--- no-ops since the column is already there from the block above.
 
--- Profile photos.
+-- Things — profile photos
+--
+-- Run this once in the SQL Editor if your database was created before this
+-- feature existed. Safe to run more than once.
+--
+-- The photo is stored as a data URI rather than in a storage bucket: two users
+-- do not justify configuring buckets and policies, and the app downscales the
+-- image to a small square before saving, so the row stays modest.
+
 alter table profiles add column if not exists avatar_url text;
 
--- Auto-clearing finished items, and custom recurrence quick picks.
+
+-- Things — later additions
+--
+-- Run once in the SQL Editor if your database predates these features.
+-- Safe to run more than once.
+
+-- How long finished to-dos and bought shopping items stick around before the
+-- app clears them. 0 disables clearing. Shared, because it changes the data
+-- both of you see rather than just how it looks.
 alter table household_settings
   add column if not exists auto_clear_days integer not null default 7;
+
+-- Which recurrence presets each person wants as quick picks, by label.
+-- An empty array means "show the built-in set".
 alter table profile_settings
   add column if not exists recurrence_presets jsonb not null default '[]'::jsonb;
 
--- Google Calendar sync. null calendar_token = sync switched off; the Edge
--- Function refuses every request in that state.
+-- Yearly recurrence. Without these two, Supabase rejects a chore set to
+-- repeat in years: the CHECK refuses the value, and the trigger would compute
+-- a null next_due_at even if it got through.
+alter table chores drop constraint if exists chores_recurrence_unit_check;
+alter table chores add constraint chores_recurrence_unit_check
+  check (recurrence_unit in ('hours','days','weeks','months','years'));
+
+create or replace function compute_next_due() returns trigger
+language plpgsql as $$
+begin
+  if new.is_recurring and new.last_completed_at is not null then
+    new.next_due_at := new.last_completed_at + make_interval(
+      hours  => case when new.recurrence_unit = 'hours'  then new.recurrence_count else 0 end,
+      days   => case when new.recurrence_unit = 'days'   then new.recurrence_count else 0 end,
+      weeks  => case when new.recurrence_unit = 'weeks'  then new.recurrence_count else 0 end,
+      months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end,
+      years  => case when new.recurrence_unit = 'years'  then new.recurrence_count else 0 end
+    );
+  else
+    new.next_due_at := null;
+  end if;
+  new.updated_at := now();
+  return new;
+end $$;
+
+
+-- Things — Google Calendar sync for recurring chores
+--
+-- Run once in the SQL Editor. Safe to run more than once.
+--
+-- The app publishes recurring chores as an iCalendar feed that Google Calendar
+-- subscribes to by URL. There is no OAuth and no Google account linking: the
+-- feed is a plain HTTPS URL, and the only thing protecting it is the random
+-- token below. That is why the token is a column rather than a fixed secret —
+-- if the URL ever leaks, regenerating it here revokes the old one instantly.
+--
+-- null token = sync switched off. The Edge Function refuses every request in
+-- that state, so turning it off in Settings genuinely turns the feed off.
+
 alter table household_settings
   add column if not exists calendar_token text;
+
+-- How long before a chore is due Google should remind you, in minutes.
+-- 0 means no reminder — the event still appears, it just doesn't alert.
 alter table household_settings
   add column if not exists calendar_alarm_minutes integer not null default 0;
+
+-- The token is looked up on every calendar poll, and Google polls a feed for
+-- as long as the subscription exists.
 create index if not exists household_settings_calendar_token_idx
   on household_settings (calendar_token)
   where calendar_token is not null;
 
--- Yearly recurrence, and a second recurrence shape: specific days of the
--- week (e.g. laundry every Tue + Wed), which the count+unit interval model
--- cannot express. Without the constraint update, Supabase rejects both a
--- chore set to repeat in years and one set to repeat on chosen weekdays.
+
+-- Things — day-of-week recurrence for chores
+--
+-- Adds a second recurrence mode alongside "every N hours/days/weeks/months/
+-- years": specific days of the week, e.g. laundry every Tuesday and
+-- Wednesday, or trash every Sunday, Thursday and Friday. The interval model
+-- (count + unit) cannot express that — "every 2 days" and "every Tue + Wed"
+-- are genuinely different shapes, not two phrasings of the same rule.
+--
+-- Run once in the SQL Editor if your database predates this feature. Safe to
+-- run more than once. Already folded into setup.sql for anyone re-pasting
+-- that file.
+
+-- 0 (Sunday) .. 6 (Saturday), matching both JS Date.getDay() and Postgres's
+-- own extract(dow from ...) — no conversion table needed on either side.
 alter table chores add column if not exists recurrence_days smallint[];
 
 alter table chores drop constraint if exists chores_recurrence_unit_check;
 alter table chores add constraint chores_recurrence_unit_check
   check (recurrence_unit in ('hours','days','weeks','months','years','weekdays'));
 
+-- A weekday-mode chore has no meaningful count, and every other mode has no
+-- meaningful day set — enforced so the two shapes can never be set together
+-- or left half-filled.
 alter table chores drop constraint if exists recurrence_complete;
 alter table chores add constraint recurrence_complete check (
   (not is_recurring
@@ -409,6 +643,11 @@ alter table chores add constraint recurrence_complete check (
     and recurrence_count is not null and recurrence_days is null)
 );
 
+-- The trigger picks up a second branch: given the days just completed on,
+-- walk forward at most 7 days to the next one that falls on a selected
+-- weekday. A loop rather than arithmetic because "next Tuesday or Wednesday,
+-- whichever comes first, from an arbitrary weekday" has no closed form worth
+-- the complexity at 7 iterations.
 create or replace function compute_next_due() returns trigger
 language plpgsql as $$
 declare
@@ -417,10 +656,6 @@ declare
 begin
   if new.is_recurring and new.last_completed_at is not null then
     if new.recurrence_unit = 'weekdays' then
-      -- Walk forward at most 7 days to the next one that falls on a selected
-      -- weekday. A loop rather than arithmetic: "next Tuesday or Wednesday,
-      -- whichever comes first, from an arbitrary weekday" has no closed form
-      -- worth the complexity at 7 iterations.
       new.next_due_at := null;
       for step in 1..7 loop
         candidate := new.last_completed_at + (step || ' days')::interval;
@@ -445,21 +680,240 @@ begin
   return new;
 end $$;
 
--- 010_fix_push_upsert.sql — the two indexes below were PARTIAL (`where
--- platform = 'fcm'` / `'webpush'`). Postgres refuses to plan the app's
--- `insert ... on conflict (token) do update ...` against a partial index
--- unless the ON CONFLICT clause repeats that exact predicate, which the
--- Supabase client's `.upsert({ onConflict: 'token' })` has no way to do —
--- so every push registration failed at the database level, on every device,
--- silently, from the very first one. `create index if not exists` alone
--- would NOT fix this on a database that already has the old partial index
--- under this name; the drop is what actually replaces its definition.
+
+-- Things — fix push subscriptions never actually saving
+--
+-- Run once in the SQL Editor if your database predates this fix. Safe to run
+-- more than once.
+--
+-- The two indexes below were PARTIAL (`where platform = 'fcm'` / `'webpush'`).
+-- Postgres will not plan `insert ... on conflict (token) do update ...`
+-- against a partial index unless the ON CONFLICT clause repeats that exact
+-- predicate — and the Supabase JS client's `.upsert({ onConflict: 'token' })`
+-- has no option to do that. The result: every single push registration
+-- failed at the database level, on every device, from the very first one.
+-- Nothing surfaced it because the client code never checked the returned
+-- error either (fixed separately, in src/lib/notifications.ts) — so
+-- Settings showed "Notifications are on" while push_subscriptions stayed
+-- empty the whole time.
+--
+-- A plain (non-partial) index works identically here: NULL is never equal to
+-- NULL under a unique index, so the many webpush rows — every one of them
+-- with token = null — never collide with each other, and the same holds for
+-- fcm rows on endpoint. Nothing about the actual uniqueness guarantee
+-- changes; only ON CONFLICT's ability to target the index does.
+
 drop index if exists push_fcm_token_idx;
 drop index if exists push_webpush_endpoint_idx;
+
 create unique index if not exists push_fcm_token_idx
   on push_subscriptions (token);
 create unique index if not exists push_webpush_endpoint_idx
   on push_subscriptions (endpoint);
+
+
+-- Things — edit tracking, online-store links, and the activity log
+--
+-- Run once in the SQL Editor if your database predates these features. Safe
+-- to run more than once.
+
+-- ---------------------------------------------------------------------------
+-- Who last edited a row, so an edit can notify the other person and the
+-- activity log can attribute it. Separate from created_by/claimed_by/
+-- last_completed_by, which each mean something more specific already.
+-- ---------------------------------------------------------------------------
+alter table todos           add column if not exists updated_by uuid references profiles(id) on delete set null;
+alter table chores          add column if not exists updated_by uuid references profiles(id) on delete set null;
+alter table shopping_items  add column if not exists updated_by uuid references profiles(id) on delete set null;
+alter table wishlist_items  add column if not exists updated_by uuid references profiles(id) on delete set null;
+
+-- ---------------------------------------------------------------------------
+-- Online-store shopping items can now carry a link, the same way wishlist
+-- items already do — paste a product URL and the unfurl function fills in
+-- the title, photo and price.
+-- ---------------------------------------------------------------------------
+alter table shopping_items add column if not exists url text;
+alter table shopping_items add column if not exists image_url text;
+alter table shopping_items add column if not exists price_cents integer;
+alter table shopping_items drop constraint if exists shopping_items_price_cents_check;
+alter table shopping_items add constraint shopping_items_price_cents_check
+  check (price_cents is null or price_cents >= 0);
+
+-- ---------------------------------------------------------------------------
+-- Activity log — a plain-language feed of what changed, independent of push
+-- delivery. A push can be missed, throttled, or never registered correctly
+-- (see 010_fix_push_upsert.sql for exactly that); this is a record either of
+-- you can open in-app and scroll, not something that has to arrive to exist.
+-- ---------------------------------------------------------------------------
+create table if not exists activity_log (
+  id         uuid primary key default gen_random_uuid(),
+  table_name text not null check (table_name in ('todos','chores','shopping_items','wishlist_items')),
+  row_id     uuid not null,
+  title      text not null,
+  -- What happened, in the household's own words rather than a raw DB verb.
+  event      text not null check (event in
+    ('added','edited','completed','uncompleted','claimed','unclaimed','deleted')),
+  actor_id   uuid references profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists activity_log_created_idx on activity_log (created_at desc);
+
+-- ---------------------------------------------------------------------------
+-- The trigger that actually writes the log. Deliberately does its own
+-- transition detection in plpgsql rather than sharing code with the Edge
+-- Function's classify() — different runtime, different job: classify()
+-- decides who to push to and what the notification says, this just decides
+-- what sentence goes in the feed. Keeping them separate means a change to
+-- push copy can't accidentally break the log or vice versa.
+-- ---------------------------------------------------------------------------
+create or replace function log_activity() returns trigger
+language plpgsql as $$
+declare
+  evt text;
+  actor uuid;
+  item_title text;
+  item_id uuid;
+begin
+  if tg_op = 'INSERT' then
+    evt := 'added';
+    actor := new.created_by;
+    item_title := new.title;
+    item_id := new.id;
+
+  elsif tg_op = 'DELETE' then
+    evt := 'deleted';
+    item_title := old.title;
+    item_id := old.id;
+    -- No session identity survives a delete — best-effort attribution to
+    -- whoever last touched the row. claimed_by only exists on three of the
+    -- four tables this trigger runs on, so it has to sit behind its own
+    -- table check rather than in one coalesce() that assumes every row
+    -- shares the same columns.
+    actor := old.updated_by;
+    if actor is null and tg_table_name in ('todos','chores','shopping_items') then
+      actor := old.claimed_by;
+    end if;
+    if actor is null then
+      actor := old.created_by;
+    end if;
+
+  elsif tg_op = 'UPDATE' then
+    item_title := new.title;
+    item_id := new.id;
+
+    /*
+      Every table-specific field access sits inside a nested IF whose OWN
+      condition references only tg_table_name/evt, with the field access
+      strictly in the body. That distinction matters and it's not stylistic:
+      old/new are the generic trigger RECORD type here, not a fixed row type,
+      and PL/pgSQL resolves a record field reference by preparing the whole
+      boolean expression it appears in as a single SPI query before any
+      short-circuiting happens. That means `tg_table_name = 'chores' and
+      old.last_completed_by is distinct from new.last_completed_by` throws
+      "record has no field" on a todos row EVEN THOUGH the first operand is
+      false — folding the table check and the field access into one
+      condition (as an earlier version of this function did) reproduces
+      exactly the bug this comment is warning about. Only an outer IF whose
+      condition is table-check-only, wrapping an inner statement that
+      references the field, is genuine control flow that skips evaluating it.
+    */
+
+    -- Completion checks run before the claimed/unclaimed check below,
+    -- deliberately: completeChore() sets last_completed_by AND clears
+    -- claimed_by in the same UPDATE (see the cooldown design above), so if
+    -- claimed/unclaimed were checked first every chore completion would log
+    -- as "unclaimed" instead of "completed". Checking completion first means
+    -- an event that changes both is reported as the more informative one.
+
+    if evt is null and tg_table_name in ('todos','shopping_items') then
+      if old.is_done is distinct from new.is_done then
+        evt := case when new.is_done then 'completed' else 'uncompleted' end;
+        actor := new.updated_by;
+        if actor is null and tg_table_name in ('todos','chores','shopping_items') then
+          actor := new.claimed_by;
+        end if;
+        if actor is null then
+          actor := new.created_by;
+        end if;
+      end if;
+    end if;
+
+    if evt is null and tg_table_name = 'chores' then
+      if old.last_completed_by is distinct from new.last_completed_by
+        and new.last_completed_by is not null then
+        evt := 'completed';
+        actor := new.last_completed_by;
+      end if;
+    end if;
+
+    if evt is null and tg_table_name = 'wishlist_items' then
+      if old.is_purchased is distinct from new.is_purchased then
+        evt := case when new.is_purchased then 'completed' else 'uncompleted' end;
+        actor := coalesce(new.updated_by, new.created_by);
+      end if;
+    end if;
+
+    if evt is null and tg_table_name in ('todos','chores','shopping_items') then
+      if (old.claimed_by is null) <> (new.claimed_by is null) then
+        if new.claimed_by is not null then
+          evt := 'claimed';
+          actor := new.claimed_by;
+        else
+          evt := 'unclaimed';
+          actor := old.claimed_by;
+        end if;
+      end if;
+    end if;
+
+    if evt is null and new.updated_by is not null
+      and old.updated_by is distinct from new.updated_by then
+      evt := 'edited';
+      actor := new.updated_by;
+    end if;
+
+    if evt is null then
+      -- Nothing log-worthy — e.g. sort_order shuffling from a drag, or the
+      -- ticker touching next_due_at. Silently skip rather than logging noise.
+      return coalesce(new, old);
+    end if;
+  end if;
+
+  insert into activity_log (table_name, row_id, title, event, actor_id)
+  values (tg_table_name, item_id, item_title, evt, actor);
+
+  return coalesce(new, old);
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['todos','chores','shopping_items','wishlist_items'] loop
+    execute format('drop trigger if exists %I_activity on %I', t, t);
+    execute format(
+      'create trigger %I_activity after insert or update or delete on %I
+         for each row execute function log_activity()', t, t);
+  end loop;
+end $$;
+
+-- RLS: same posture as everything else — authenticated only.
+alter table activity_log enable row level security;
+drop policy if exists household_rw on activity_log;
+create policy household_rw on activity_log for all
+  to authenticated using (true) with check (true);
+
+-- Realtime, so the bell badge updates live rather than on next refetch.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'activity_log'
+  ) then
+    execute 'alter publication supabase_realtime add table activity_log';
+  end if;
+end $$;
+
+alter table activity_log replica identity full;
 
 
 -- ==========================================================================
@@ -492,7 +946,7 @@ begin
   foreach t in array array[
     'profiles','profile_settings','household_settings',
     'todos','chores','stores','shopping_items','wishlist_items',
-    'geocode_cache','shopping_trips','push_subscriptions'
+    'geocode_cache','shopping_trips','push_subscriptions','activity_log'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists household_rw on %I', t);
@@ -520,7 +974,7 @@ declare t text;
 begin
   foreach t in array array[
     'todos','chores','shopping_items','stores','wishlist_items',
-    'profile_settings','household_settings','shopping_trips'
+    'profile_settings','household_settings','shopping_trips','activity_log'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -550,6 +1004,7 @@ alter table stores          replica identity full;
 alter table wishlist_items  replica identity full;
 alter table profile_settings replica identity full;
 alter table household_settings replica identity full;
+alter table activity_log      replica identity full;
 
 
 -- ==========================================================================

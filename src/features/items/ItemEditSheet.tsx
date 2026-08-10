@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Sheet } from '@/components/primitives/Sheet'
 import { Icon } from '@/components/primitives/Icon'
+import { Avatar } from '@/components/primitives/ClaimChip'
+import { DesireMeter } from '@/components/primitives/DesireMeter'
 import { useData, dataActions, type Recurrence } from '@/store/useData'
 import { useUI } from '@/store/useUI'
+import { useProfile } from '@/store/useProfile'
 import { fire } from '@/lib/haptics'
 import { RECURRENCE_PRESETS, deriveRecurrenceUI, describeRecurrence } from '@/lib/time'
 import { RecurrenceFields, type RecurrenceMode } from '@/features/chores/RecurrenceFields'
+import { parsePrice, priceToInput } from '@/lib/money'
+import { unfurl, isUrl } from '@/lib/unfurl'
 import { toast } from 'sonner'
 import {
   URGENCY_LEVELS,
@@ -13,6 +18,7 @@ import {
   type RecurrenceUnit,
   type Urgency,
   type Weekday,
+  type Desire,
 } from '@/data/types'
 
 const URGENCY_COLORS: Record<Urgency, string> = {
@@ -30,6 +36,9 @@ const URGENCY_COLORS: Record<Urgency, string> = {
  * create-only: once a chore's recurrence was set there was no way to change
  * it short of deleting and re-adding.
  *
+ * Also the only wishlist edit surface — WishCard only ever supported inline
+ * price/desire edits, never title, notes, link or owner.
+ *
  * Stays mounted permanently, like every other sheet in the app — Sheet's own
  * `open` prop drives its AnimatePresence, so an early `return null` here
  * would skip the close animation instead of playing it.
@@ -37,11 +46,14 @@ const URGENCY_COLORS: Record<Urgency, string> = {
 export function ItemEditSheet() {
   const sheet = useUI((s) => s.sheet)
   const closeSheet = useUI((s) => s.closeSheet)
+  const profileId = useProfile((s) => s.profileId)
 
   const todos = useData((s) => s.todos)
   const chores = useData((s) => s.chores)
   const shoppingItems = useData((s) => s.shopping_items)
+  const wishlistItems = useData((s) => s.wishlist_items)
   const stores = useData((s) => s.stores)
+  const profiles = useData((s) => s.profiles)
 
   const item = sheet.kind === 'item' ? sheet : null
   const row = !item
@@ -50,7 +62,9 @@ export function ItemEditSheet() {
       ? todos.find((t) => t.id === item.id)
       : item.table === 'chores'
         ? chores.find((c) => c.id === item.id)
-        : shoppingItems.find((i) => i.id === item.id)
+        : item.table === 'shopping_items'
+          ? shoppingItems.find((i) => i.id === item.id)
+          : wishlistItems.find((w) => w.id === item.id)
 
   const [title, setTitle] = useState('')
   const [notes, setNotes] = useState('')
@@ -58,6 +72,13 @@ export function ItemEditSheet() {
   const [quantity, setQuantity] = useState('')
   const [storeId, setStoreId] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const [url, setUrl] = useState('')
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [price, setPrice] = useState('')
+  const [desire, setDesire] = useState<Desire>(3)
+  const [ownerId, setOwnerId] = useState<string | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
 
   const [recurring, setRecurring] = useState(false)
   const [mode, setMode] = useState<RecurrenceMode>('presets')
@@ -74,12 +95,17 @@ export function ItemEditSheet() {
   useEffect(() => {
     if (!row) return
     setTitle(row.title)
-    setUrgency(row.urgency)
     setConfirmDelete(false)
 
+    if ('urgency' in row) setUrgency(row.urgency)
     if ('notes' in row) setNotes(row.notes ?? '')
     if ('quantity' in row) setQuantity(row.quantity ?? '')
     if ('store_id' in row) setStoreId(row.store_id)
+    if ('url' in row) setUrl(row.url ?? '')
+    if ('image_url' in row) setImageUrl(row.image_url)
+    if ('price_cents' in row) setPrice(priceToInput(row.price_cents))
+    if ('desire_level' in row) setDesire(row.desire_level)
+    if ('owner_id' in row) setOwnerId(row.owner_id)
 
     if ('is_recurring' in row) {
       setRecurring(row.is_recurring)
@@ -97,6 +123,9 @@ export function ItemEditSheet() {
   const table = item?.table ?? 'todos'
   const isChore = table === 'chores'
   const isShopping = table === 'shopping_items'
+  const isWishlist = table === 'wishlist_items'
+  const selectedStore = stores.find((s) => s.id === storeId) ?? null
+  const showLinkFields = isWishlist || (isShopping && selectedStore?.is_online === true)
 
   const recurrence: Recurrence | null = !recurring
     ? null
@@ -115,6 +144,23 @@ export function ItemEditSheet() {
         ? describeRecurrence(Math.max(1, parseInt(custom.count) || 1), custom.unit)
         : describeRecurrence(preset.count, preset.unit)
 
+  // Paste or edit a link and have title/photo/price fill themselves in — the
+  // same behavior WishAddBar gives on add, now available on edit too.
+  async function handleUrlBlur() {
+    const trimmed = url.trim()
+    if (!trimmed || !isUrl(trimmed)) return
+    setLoadingPreview(true)
+    const preview = await unfurl(trimmed)
+    setLoadingPreview(false)
+    if (!preview) return
+
+    if (preview.title && !title.trim()) setTitle(preview.title.slice(0, 120))
+    if (preview.image) setImageUrl(preview.image)
+    if (preview.priceCents != null && !price.trim()) setPrice(priceToInput(preview.priceCents))
+    fire('success')
+    toast.success('Filled in from the link')
+  }
+
   function save() {
     if (!item) return
     const trimmed = title.trim()
@@ -129,11 +175,14 @@ export function ItemEditSheet() {
       return
     }
 
+    const cents = price.trim() ? parsePrice(price) : null
+
     if (item.table === 'todos') {
       void dataActions.patchRow('todos', item.id, {
         title: trimmed,
         urgency,
         notes: notes.trim() || null,
+        updated_by: profileId,
       })
     } else if (item.table === 'chores') {
       void dataActions.patchRow('chores', item.id, {
@@ -144,13 +193,29 @@ export function ItemEditSheet() {
         recurrence_count: recurrence && recurrence.unit !== 'weekdays' ? recurrence.count : null,
         recurrence_unit: recurrence?.unit ?? null,
         recurrence_days: recurrence && recurrence.unit === 'weekdays' ? recurrence.days : null,
+        updated_by: profileId,
       })
-    } else {
+    } else if (item.table === 'shopping_items') {
       void dataActions.patchRow('shopping_items', item.id, {
         title: trimmed,
         urgency,
         quantity: quantity.trim() || null,
         store_id: storeId,
+        url: url.trim() || null,
+        image_url: imageUrl,
+        price_cents: cents,
+        updated_by: profileId,
+      })
+    } else {
+      void dataActions.patchRow('wishlist_items', item.id, {
+        title: trimmed,
+        notes: notes.trim() || null,
+        url: url.trim() || null,
+        image_url: imageUrl,
+        price_cents: cents,
+        desire_level: desire,
+        owner_id: ownerId,
+        updated_by: profileId,
       })
     }
 
@@ -188,35 +253,37 @@ export function ItemEditSheet() {
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
-              Urgency
-            </label>
-            <div className="flex gap-2">
-              {URGENCY_LEVELS.map((u) => {
-                const on = urgency === u
-                return (
-                  <button
-                    key={u}
-                    onClick={() => {
-                      fire('snap')
-                      setUrgency(u)
-                    }}
-                    className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
-                    style={{
-                      background: on
-                        ? `color-mix(in oklab, ${URGENCY_COLORS[u]} 22%, transparent)`
-                        : 'var(--surface-2)',
-                      border: `1.5px solid ${on ? URGENCY_COLORS[u] : 'var(--border)'}`,
-                      color: on ? URGENCY_COLORS[u] : 'var(--text-dim)',
-                    }}
-                  >
-                    {URGENCY_META[u].label}
-                  </button>
-                )
-              })}
+          {!isWishlist && (
+            <div className="flex flex-col gap-2">
+              <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                Urgency
+              </label>
+              <div className="flex gap-2">
+                {URGENCY_LEVELS.map((u) => {
+                  const on = urgency === u
+                  return (
+                    <button
+                      key={u}
+                      onClick={() => {
+                        fire('snap')
+                        setUrgency(u)
+                      }}
+                      className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
+                      style={{
+                        background: on
+                          ? `color-mix(in oklab, ${URGENCY_COLORS[u]} 22%, transparent)`
+                          : 'var(--surface-2)',
+                        border: `1.5px solid ${on ? URGENCY_COLORS[u] : 'var(--border)'}`,
+                        color: on ? URGENCY_COLORS[u] : 'var(--text-dim)',
+                      }}
+                    >
+                      {URGENCY_META[u].label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {isShopping && (
             <div className="flex flex-col gap-2">
@@ -272,6 +339,7 @@ export function ItemEditSheet() {
                         style={{ background: s.color_hex }}
                       />
                       {s.name}
+                      {s.is_online && <Icon name="globe" size={10} strokeWidth={2.6} />}
                     </button>
                   )
                 })}
@@ -279,7 +347,106 @@ export function ItemEditSheet() {
             </div>
           )}
 
-          {(table === 'todos' || isChore) && (
+          {showLinkFields && (
+            <div className="flex flex-col gap-2">
+              <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                Link
+              </label>
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onBlur={handleUrlBlur}
+                placeholder={loadingPreview ? 'Reading the link…' : 'Paste a product link…'}
+                className="rounded-xl px-3.5 py-3 text-[15px] outline-none"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+              />
+            </div>
+          )}
+
+          {showLinkFields && (
+            <div className="flex flex-col gap-2">
+              <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                Price
+              </label>
+              <div
+                className="flex items-center gap-1.5 rounded-xl px-3.5 py-3"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+              >
+                <span className="text-[15px]" style={{ color: 'var(--text-faint)' }}>$</span>
+                <input
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Optional"
+                  className="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {isWishlist && (
+            <div className="flex flex-col gap-2">
+              <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                How badly do you want it
+              </label>
+              <div
+                className="flex items-center rounded-xl px-3.5 py-3"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+              >
+                <DesireMeter value={desire} onChange={setDesire} showLabel />
+              </div>
+            </div>
+          )}
+
+          {isWishlist && (
+            <div className="flex flex-col gap-2">
+              <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                Who wants it
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {profiles.map((p) => {
+                  const on = ownerId === p.id
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        fire('snap')
+                        setOwnerId(p.id)
+                      }}
+                      className="flex items-center gap-1.5 rounded-full py-1.5 pl-1.5 pr-3 text-[13px] font-medium"
+                      style={{
+                        background: on
+                          ? `color-mix(in oklab, ${p.color_hex} 26%, transparent)`
+                          : 'var(--surface-2)',
+                        border: `1.5px solid ${on ? p.color_hex : 'var(--border)'}`,
+                        color: on ? 'var(--text)' : 'var(--text-dim)',
+                      }}
+                    >
+                      <span className="grid h-6 w-6 place-items-center overflow-hidden rounded-full text-[13px]">
+                        <Avatar profile={p} size={24} />
+                      </span>
+                      {p.display_name}
+                    </button>
+                  )
+                })}
+                <button
+                  onClick={() => {
+                    fire('snap')
+                    setOwnerId(null)
+                  }}
+                  className="rounded-full px-3 py-2 text-[13px] font-medium"
+                  style={{
+                    background: ownerId === null ? 'var(--accent)' : 'var(--surface-2)',
+                    color: ownerId === null ? '#fff' : 'var(--text-dim)',
+                  }}
+                >
+                  Both of you
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(table === 'todos' || isChore || isWishlist) && (
             <div className="flex flex-col gap-2">
               <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
                 Notes

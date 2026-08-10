@@ -1,4 +1,5 @@
 import type {
+  ActivityLog,
   Chore,
   HouseholdSettings,
   Profile,
@@ -21,6 +22,7 @@ export const TABLES = [
   'profile_settings',
   'household_settings',
   'shopping_trips',
+  'activity_log',
 ] as const
 
 export type TableName = (typeof TABLES)[number]
@@ -35,6 +37,7 @@ export interface TableMap {
   profile_settings: ProfileSettings
   household_settings: HouseholdSettings
   shopping_trips: ShoppingTrip
+  activity_log: ActivityLog
 }
 
 export type ChangeEvent<T extends TableName = TableName> =

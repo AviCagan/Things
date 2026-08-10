@@ -229,6 +229,7 @@ function PriceTag({ wish }: { wish: WishlistItem }) {
 }
 
 function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] }) {
+  const openSheet = useUI((s) => s.openSheet)
   const [confirming, setConfirming] = useState(false)
   const owner = profiles.find((p) => p.id === wish.owner_id) ?? null
   const color = DESIRE_COLOR[wish.desire_level]
@@ -373,14 +374,27 @@ function WishCard({ wish, profiles }: { wish: WishlistItem; profiles: Profile[] 
           </div>
         </div>
       ) : (
-        <button
-          onClick={() => setConfirming(true)}
-          aria-label="Delete"
-          className="absolute right-1.5 top-1.5 z-10 grid h-6 w-6 place-items-center rounded-full opacity-45"
-          style={{ color: 'var(--text-faint)' }}
-        >
-          <Icon name="close" size={12} strokeWidth={2.6} />
-        </button>
+        <>
+          <button
+            onClick={() => {
+              fire('tap')
+              openSheet({ kind: 'item', table: 'wishlist_items', id: wish.id })
+            }}
+            aria-label="Edit"
+            className="absolute left-1.5 top-1.5 z-10 grid h-6 w-6 place-items-center rounded-full opacity-45"
+            style={{ color: 'var(--text-faint)' }}
+          >
+            <Icon name="pencil" size={12} strokeWidth={2.6} />
+          </button>
+          <button
+            onClick={() => setConfirming(true)}
+            aria-label="Delete"
+            className="absolute right-1.5 top-1.5 z-10 grid h-6 w-6 place-items-center rounded-full opacity-45"
+            style={{ color: 'var(--text-faint)' }}
+          >
+            <Icon name="close" size={12} strokeWidth={2.6} />
+          </button>
+        </>
       )}
     </motion.div>
   )

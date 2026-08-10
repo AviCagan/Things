@@ -146,6 +146,7 @@ function baseFields(profileId: string | null) {
     id: newId(),
     claimed_by: null,
     created_by: profileId,
+    updated_by: null,
     sort_order: Date.now(),
     created_at: nowIso(),
     updated_at: nowIso(),
@@ -284,6 +285,7 @@ export const dataActions = {
     storeId: string | null,
     profileId: string | null,
     quantity: string | null = null,
+    extra: Partial<ShoppingItem> = {},
   ) {
     const row: ShoppingItem = {
       ...baseFields(profileId),
@@ -293,6 +295,10 @@ export const dataActions = {
       quantity,
       is_done: false,
       completed_at: null,
+      url: null,
+      image_url: null,
+      price_cents: null,
+      ...extra,
     }
     const snapshot = useData.getState().shopping_items
     fire('tap')
@@ -354,6 +360,7 @@ export const dataActions = {
       is_purchased: false,
       purchased_at: null,
       created_by: profileId,
+      updated_by: null,
       sort_order: Date.now(),
       created_at: nowIso(),
       updated_at: nowIso(),
@@ -371,15 +378,6 @@ export const dataActions = {
   },
 
   // --- shared --------------------------------------------------------------
-
-  async setUrgency(
-    table: 'todos' | 'chores' | 'shopping_items',
-    id: string,
-    urgency: Urgency,
-  ) {
-    fire('snap')
-    await patchRow(table, id, { urgency } as never)
-  },
 
   /**
    * Claiming is a race between two phones. Never read-then-write: the adapter

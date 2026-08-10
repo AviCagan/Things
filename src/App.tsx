@@ -15,6 +15,7 @@ import { WishlistTab } from './features/wishlist/WishlistTab'
 import { WishAddBar } from './features/wishlist/WishAddBar'
 import { SettingsSheet } from './features/settings/SettingsSheet'
 import { ItemEditSheet } from './features/items/ItemEditSheet'
+import { ActivityBell } from './features/activity/ActivityBell'
 import { PinGate } from './components/shell/PinGate'
 import { Tour, tourSeen } from './components/shell/Tour'
 import { useData, dataActions } from './store/useData'
@@ -31,6 +32,7 @@ import { hasSession, supabase } from './lib/supabase'
 import { createSupabaseAdapter } from './data/supabaseAdapter'
 import { drain } from './data/outbox'
 import { startCleanup } from './lib/cleanup'
+import { ensurePushRegistered } from './lib/notifications'
 import { errorMessage, withRetry } from './lib/errors'
 
 /** Swap the local adapter for Supabase and replay anything queued offline. */
@@ -118,6 +120,18 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [boot, profileId])
 
+  // Silently confirms push registration on every launch when OS permission is
+  // already granted — no prompt shown either way. This is what makes the fix
+  // for the broken push_subscriptions index actually reach a phone where
+  // Settings already said "on": that state reflects browser permission, not
+  // whether a row was ever saved, and there was previously no way for it to
+  // self-correct short of someone tapping a button that looked pointless to
+  // tap.
+  useEffect(() => {
+    if (boot !== 'ready' || !profileId || !isConfigured()) return
+    void ensurePushRegistered(profileId)
+  }, [boot, profileId])
+
   if (boot === 'locked') {
     return (
       <>
@@ -201,24 +215,30 @@ export default function App() {
           </motion.div>
         </AnimatePresence>
 
-        {/* Settings sits in the header rail so the dock stays four clean tabs.
-            Absolute within this wrapper, so it tracks the banner's height. */}
-        <button
-          onClick={() => {
-            fire('tap')
-            openSheet({ kind: 'settings' })
-          }}
-          aria-label="Settings"
-          className="absolute right-4 z-40 grid h-9 w-9 place-items-center rounded-full"
-          style={{
-            top: 'calc(env(safe-area-inset-top, 0px) + 14px)',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-dim)',
-          }}
+        {/* Settings + Activity sit in the header rail so the dock stays four
+            clean tabs. Absolute within this wrapper, so they track the
+            banner's height. */}
+        <div
+          className="absolute right-4 z-40 flex items-center gap-2"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 14px)' }}
         >
-          <Icon name="settings" size={17} />
-        </button>
+          <ActivityBell />
+          <button
+            onClick={() => {
+              fire('tap')
+              openSheet({ kind: 'settings' })
+            }}
+            aria-label="Settings"
+            className="grid h-9 w-9 place-items-center rounded-full"
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-dim)',
+            }}
+          >
+            <Icon name="settings" size={17} />
+          </button>
+        </div>
       </div>
 
       {/* Sits clear of the dock: 6px padding + 54px slot + 6px + 10px margin. */}

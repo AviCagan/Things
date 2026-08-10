@@ -8,6 +8,8 @@ import { useProfile } from '@/store/useProfile'
 import { useUI } from '@/store/useUI'
 import { SortBar, compareBy } from '@/components/shell/SortBar'
 import { fire } from '@/lib/haptics'
+import { formatPrice } from '@/lib/money'
+import { domainOf } from '@/lib/unfurl'
 import { StoresSheet } from './StoresSheet'
 import { TripSheet } from './TripSheet'
 import type { ShoppingItem, Store } from '@/data/types'
@@ -169,6 +171,7 @@ export function ShoppingTab() {
               claimedBy={item.claimed_by}
               profiles={profiles}
               done
+              meta={<ShoppingItemMeta item={item} />}
               trailing={
                 <button
                   onClick={(e) => {
@@ -191,6 +194,23 @@ export function ShoppingTab() {
 
       <StoresSheet />
       <TripSheet />
+    </>
+  )
+}
+
+/** Quantity, plus a link/price when the item carries an online-store link. */
+function ShoppingItemMeta({ item }: { item: ShoppingItem }) {
+  if (!item.quantity && !item.url) return undefined
+  return (
+    <>
+      {item.quantity && <span>{item.quantity}</span>}
+      {item.url && (
+        <span className="flex items-center gap-1">
+          <Icon name="link" size={11} strokeWidth={2.4} />
+          {domainOf(item.url)}
+        </span>
+      )}
+      {item.price_cents != null && <span>{formatPrice(item.price_cents)}</span>}
     </>
   )
 }
@@ -252,7 +272,7 @@ function StoreGroup({
                   urgency={item.urgency}
                   claimedBy={item.claimed_by}
                   profiles={profiles}
-                  meta={item.quantity ? <span>{item.quantity}</span> : undefined}
+                  meta={<ShoppingItemMeta item={item} />}
                   onComplete={() => dataActions.toggleShoppingItem(item)}
                   onClaim={() =>
                     profileId &&

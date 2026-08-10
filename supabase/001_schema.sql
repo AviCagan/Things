@@ -81,6 +81,10 @@ create table if not exists todos (
   created_by   uuid references profiles(id) on delete set null,
   completed_by uuid references profiles(id) on delete set null,
   completed_at timestamptz,
+  -- Set only by the edit sheet, so an edit can notify the other person and
+  -- the activity log can attribute it. created_by/claimed_by already mean
+  -- something more specific, so this stays separate rather than overloaded.
+  updated_by   uuid references profiles(id) on delete set null,
   sort_order   double precision not null default extract(epoch from now()),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
@@ -93,6 +97,7 @@ create table if not exists chores (
   urgency           smallint not null default 1 check (urgency between 0 and 3),
   claimed_by        uuid references profiles(id) on delete set null,
   created_by        uuid references profiles(id) on delete set null,
+  updated_by        uuid references profiles(id) on delete set null,
 
   is_recurring      boolean not null default false,
   recurrence_count  integer check (recurrence_count > 0),
@@ -162,7 +167,13 @@ create table if not exists shopping_items (
   is_done      boolean not null default false,
   claimed_by   uuid references profiles(id) on delete set null,
   created_by   uuid references profiles(id) on delete set null,
+  updated_by   uuid references profiles(id) on delete set null,
   completed_at timestamptz,
+  -- A product link for an online-store item, the same way wishlist items
+  -- carry one — paste a URL and the unfurl function fills in the rest.
+  url          text,
+  image_url    text,
+  price_cents  integer check (price_cents is null or price_cents >= 0),
   sort_order   double precision not null default extract(epoch from now()),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
@@ -180,10 +191,27 @@ create table if not exists wishlist_items (
   is_purchased boolean not null default false,
   purchased_at timestamptz,
   created_by   uuid references profiles(id) on delete set null,
+  updated_by   uuid references profiles(id) on delete set null,
   sort_order   double precision not null default extract(epoch from now()),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+
+-- A plain-language feed of what changed, independent of push delivery — a
+-- push can be missed or never registered correctly; this is a record either
+-- of you can open and scroll regardless.
+create table if not exists activity_log (
+  id         uuid primary key default gen_random_uuid(),
+  table_name text not null check (table_name in ('todos','chores','shopping_items','wishlist_items')),
+  row_id     uuid not null,
+  title      text not null,
+  event      text not null check (event in
+    ('added','edited','completed','uncompleted','claimed','unclaimed','deleted')),
+  actor_id   uuid references profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists activity_log_created_idx on activity_log (created_at desc);
 
 -- Permanent geocode cache. Combined with denormalising lat/lng onto `stores`,
 -- steady-state trip planning makes zero requests to the free geocoders.
@@ -322,6 +350,143 @@ begin
     execute format(
       'create trigger %I_updated_at before update on %I
          for each row execute function set_updated_at()', t, t);
+  end loop;
+end $$;
+
+/*
+  The activity log's trigger. Deliberately does its own transition detection
+  in plpgsql rather than sharing code with the Edge Function's classify() —
+  different runtime, different job: classify() decides who to push to and
+  what the notification says, this just decides what sentence goes in the
+  in-app feed. Keeping them separate means a change to push copy can't
+  accidentally break the log or vice versa.
+*/
+create or replace function log_activity() returns trigger
+language plpgsql as $$
+declare
+  evt text;
+  actor uuid;
+  item_title text;
+  item_id uuid;
+begin
+  if tg_op = 'INSERT' then
+    evt := 'added';
+    actor := new.created_by;
+    item_title := new.title;
+    item_id := new.id;
+
+  elsif tg_op = 'DELETE' then
+    evt := 'deleted';
+    item_title := old.title;
+    item_id := old.id;
+    -- No session identity survives a delete — best-effort attribution to
+    -- whoever last touched the row. claimed_by only exists on three of the
+    -- four tables this trigger runs on, so it has to sit behind its own
+    -- table check rather than in one coalesce() that assumes every row
+    -- shares the same columns.
+    actor := old.updated_by;
+    if actor is null and tg_table_name in ('todos','chores','shopping_items') then
+      actor := old.claimed_by;
+    end if;
+    if actor is null then
+      actor := old.created_by;
+    end if;
+
+  elsif tg_op = 'UPDATE' then
+    item_title := new.title;
+    item_id := new.id;
+
+    /*
+      Every table-specific field access sits inside a nested IF whose OWN
+      condition references only tg_table_name/evt, with the field access
+      strictly in the body. That distinction matters and it's not stylistic:
+      old/new are the generic trigger RECORD type here, not a fixed row type,
+      and PL/pgSQL resolves a record field reference by preparing the whole
+      boolean expression it appears in as a single SPI query before any
+      short-circuiting happens. That means `tg_table_name = 'chores' and
+      old.last_completed_by is distinct from new.last_completed_by` throws
+      "record has no field" on a todos row EVEN THOUGH the first operand is
+      false — folding the table check and the field access into one
+      condition (as an earlier version of this function did) reproduces
+      exactly the bug this comment is warning about. Only an outer IF whose
+      condition is table-check-only, wrapping an inner statement that
+      references the field, is genuine control flow that skips evaluating it.
+    */
+
+    -- Completion checks run before the claimed/unclaimed check below,
+    -- deliberately: completeChore() sets last_completed_by AND clears
+    -- claimed_by in the same UPDATE (see the cooldown design above), so if
+    -- claimed/unclaimed were checked first every chore completion would log
+    -- as "unclaimed" instead of "completed". Checking completion first means
+    -- an event that changes both is reported as the more informative one.
+
+    if evt is null and tg_table_name in ('todos','shopping_items') then
+      if old.is_done is distinct from new.is_done then
+        evt := case when new.is_done then 'completed' else 'uncompleted' end;
+        actor := new.updated_by;
+        if actor is null and tg_table_name in ('todos','chores','shopping_items') then
+          actor := new.claimed_by;
+        end if;
+        if actor is null then
+          actor := new.created_by;
+        end if;
+      end if;
+    end if;
+
+    if evt is null and tg_table_name = 'chores' then
+      if old.last_completed_by is distinct from new.last_completed_by
+        and new.last_completed_by is not null then
+        evt := 'completed';
+        actor := new.last_completed_by;
+      end if;
+    end if;
+
+    if evt is null and tg_table_name = 'wishlist_items' then
+      if old.is_purchased is distinct from new.is_purchased then
+        evt := case when new.is_purchased then 'completed' else 'uncompleted' end;
+        actor := coalesce(new.updated_by, new.created_by);
+      end if;
+    end if;
+
+    if evt is null and tg_table_name in ('todos','chores','shopping_items') then
+      if (old.claimed_by is null) <> (new.claimed_by is null) then
+        if new.claimed_by is not null then
+          evt := 'claimed';
+          actor := new.claimed_by;
+        else
+          evt := 'unclaimed';
+          actor := old.claimed_by;
+        end if;
+      end if;
+    end if;
+
+    if evt is null and new.updated_by is not null
+      and old.updated_by is distinct from new.updated_by then
+      evt := 'edited';
+      actor := new.updated_by;
+    end if;
+
+    if evt is null then
+      -- Nothing log-worthy — e.g. sort_order shuffling from a drag, or the
+      -- ticker touching next_due_at. Silently skip rather than logging noise.
+      return coalesce(new, old);
+    end if;
+  end if;
+
+  insert into activity_log (table_name, row_id, title, event, actor_id)
+  values (tg_table_name, item_id, item_title, evt, actor);
+
+  return coalesce(new, old);
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['todos','chores','shopping_items','wishlist_items'] loop
+    execute format('drop trigger if exists %I_activity on %I', t, t);
+    execute format(
+      'create trigger %I_activity after insert or update or delete on %I
+         for each row execute function log_activity()', t, t);
   end loop;
 end $$;
 

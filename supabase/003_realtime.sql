@@ -11,7 +11,7 @@ declare t text;
 begin
   foreach t in array array[
     'todos','chores','shopping_items','stores','wishlist_items',
-    'profile_settings','household_settings','shopping_trips'
+    'profile_settings','household_settings','shopping_trips','activity_log'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -41,3 +41,4 @@ alter table stores          replica identity full;
 alter table wishlist_items  replica identity full;
 alter table profile_settings replica identity full;
 alter table household_settings replica identity full;
+alter table activity_log      replica identity full;

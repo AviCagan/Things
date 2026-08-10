@@ -13,8 +13,8 @@ type Sheet =
   | { kind: 'settings' }
   | { kind: 'trip' }
   | { kind: 'stores' }
-  | { kind: 'item'; table: 'todos' | 'chores' | 'shopping_items'; id: string }
-  | { kind: 'wish'; id: string }
+  | { kind: 'item'; table: 'todos' | 'chores' | 'shopping_items' | 'wishlist_items'; id: string }
+  | { kind: 'activity' }
 
 /** Every sort key any tab offers. Each tab exposes only the ones it means. */
 export type SortKey = 'urgency' | 'added' | 'recurring' | 'desire' | 'price' | 'store'

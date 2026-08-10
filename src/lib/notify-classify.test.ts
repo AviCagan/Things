@@ -114,6 +114,41 @@ describe('classify: completing', () => {
   })
 })
 
+describe('classify: editing', () => {
+  it('fires item_edited when updated_by changes and nothing else matched', () => {
+    const c = classify({
+      type: 'UPDATE',
+      table: 'wishlist_items',
+      record: { id: '1', title: 'New headphones', updated_by: 'avi' },
+      old_record: { id: '1', title: 'Headphones', updated_by: null },
+    })
+    expect(c?.event).toBe('item_edited')
+    expect(c?.actorId).toBe('avi')
+    expect(c?.targetId).toBeNull()
+    expect(c?.push.tab).toBe('wishlist')
+  })
+
+  it('does not fire when updated_by is unchanged', () => {
+    const c = classify({
+      type: 'UPDATE',
+      table: 'todos',
+      record: { id: '1', title: 'Milk v2', updated_by: 'avi' },
+      old_record: { id: '1', title: 'Milk', updated_by: 'avi' },
+    })
+    expect(c).toBeNull()
+  })
+
+  it('is a fallback — claiming still wins even if updated_by also changed', () => {
+    const c = classify({
+      type: 'UPDATE',
+      table: 'todos',
+      record: { id: '1', title: 'Milk', claimed_by: 'jackie', created_by: 'avi', updated_by: 'jackie' },
+      old_record: { id: '1', title: 'Milk', claimed_by: null, created_by: 'avi', updated_by: null },
+    })
+    expect(c?.event).toBe('claim_complete')
+  })
+})
+
 describe('classify: no-ops', () => {
   it('ignores deletes', () => {
     expect(

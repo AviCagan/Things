@@ -39,6 +39,8 @@ interface LooseQuery extends PromiseLike<{ data: unknown; error: unknown }> {
   select(columns?: string): LooseQuery
   single(): LooseQuery
   maybeSingle(): LooseQuery
+  order(column: string, opts?: { ascending?: boolean }): LooseQuery
+  limit(count: number): LooseQuery
 }
 
 interface LooseTable {
@@ -56,7 +58,15 @@ export function createSupabaseAdapter(sb: SupabaseClient): DataAdapter {
     kind: 'supabase',
 
     async list(table) {
-      const { data, error } = await from(table).select('*')
+      // activity_log grows forever — nothing ever deletes from it — so unlike
+      // every other table it can't be fetched in full. Newest 200 is what the
+      // bell shows anyway; there's no case for pulling the whole history down
+      // to every device on every reconnect.
+      const query =
+        table === 'activity_log'
+          ? from(table).select('*').order('created_at', { ascending: false }).limit(200)
+          : from(table).select('*')
+      const { data, error } = await query
       if (error) throw error
       return (data ?? []) as never
     },

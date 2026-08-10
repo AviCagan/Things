@@ -612,6 +612,7 @@ const NOTIFY_EVENTS: { key: NotifyEvent; label: string; hint: string }[] = [
   },
   { key: 'urgent_added', label: 'Urgent items', hint: 'Only the top urgency level' },
   { key: 'any_added', label: 'Anything added', hint: 'Every new item on any list' },
+  { key: 'item_edited', label: 'Edits', hint: 'When someone changes an item you can see' },
 ]
 
 function NotificationsGroup({
@@ -627,14 +628,25 @@ function NotificationsGroup({
   const [busy, setBusy] = useState(false)
 
   async function turnOn() {
+    // Tapping while already "on" re-runs registration rather than doing
+    // nothing — the button used to be disabled in this state, which is
+    // exactly how a permission-granted-but-never-actually-saved subscription
+    // stayed invisible with no way to retry.
+    const reverifying = state === 'granted'
     setBusy(true)
     try {
       // Must run inside this click — a permission prompt outside a user
       // gesture is refused, and on iOS a refusal sticks until the icon is
-      // reinstalled.
+      // reinstalled. When already granted this resolves instantly with no
+      // prompt shown, so re-tapping never surprises anyone with a dialog.
       const next = await enablePush(profileId)
       setState(next)
       fire(next === 'granted' ? 'success' : 'warning')
+      if (reverifying) {
+        toast[next === 'granted' ? 'success' : 'error'](
+          next === 'granted' ? "Confirmed — you're registered" : "Couldn't confirm — try again",
+        )
+      }
     } catch (err) {
       // Belt and braces: enablePush is written to resolve to 'error' rather
       // than throw, but a stuck "Asking…" button forever is a worse failure
@@ -692,7 +704,7 @@ function NotificationsGroup({
       {(state === 'default' || state === 'granted' || state === 'error') && (
         <button
           onClick={turnOn}
-          disabled={busy || state === 'granted'}
+          disabled={busy}
           className="flex items-center justify-between rounded-2xl px-4 py-4 disabled:opacity-70"
           style={{
             background: state === 'granted' ? 'var(--surface-2)' : 'var(--accent)',
@@ -701,16 +713,23 @@ function NotificationsGroup({
         >
           <span className="flex items-center gap-2 text-[14px] font-medium">
             <Icon name="bell" size={16} />
-            {state === 'granted'
-              ? 'Notifications are on'
-              : busy
-                ? 'Asking…'
+            {busy
+              ? state === 'granted'
+                ? 'Verifying…'
+                : 'Asking…'
+              : state === 'granted'
+                ? 'Notifications are on'
                 : state === 'error'
                   ? 'Try again'
                   : 'Turn on notifications'}
           </span>
-          {state === 'granted' && <Icon name="check" size={16} strokeWidth={2.6} />}
+          {state === 'granted' && !busy && <Icon name="check" size={16} strokeWidth={2.6} />}
         </button>
+      )}
+      {state === 'granted' && (
+        <p className="px-1 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+          Tap to re-check if you're not sure it's actually registered.
+        </p>
       )}
 
       {NOTIFY_EVENTS.map((e) => (
