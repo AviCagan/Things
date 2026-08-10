@@ -228,10 +228,19 @@ create table if not exists push_subscriptions (
   )
 );
 
+-- Plain unique indexes, deliberately NOT partial (`where platform = 'fcm'`
+-- etc). Postgres refuses to plan `ON CONFLICT (token)` against a partial
+-- index unless the ON CONFLICT clause repeats the exact predicate — which the
+-- Supabase client's `.upsert({ onConflict: 'token' })` has no way to do. A
+-- partial index here means every single upsert fails at plan time, silently,
+-- because nothing downstream checks the returned error either. A plain index
+-- needs no such predicate: NULL is never equal to NULL under uniqueness, so
+-- the many webpush rows (token always null) never collide with each other,
+-- and the same holds for fcm rows on endpoint.
 create unique index if not exists push_fcm_token_idx
-  on push_subscriptions (token) where platform = 'fcm';
+  on push_subscriptions (token);
 create unique index if not exists push_webpush_endpoint_idx
-  on push_subscriptions (endpoint) where platform = 'webpush';
+  on push_subscriptions (endpoint);
 
 -- ---------------------------------------------------------------------------
 -- Triggers

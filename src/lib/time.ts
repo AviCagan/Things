@@ -82,3 +82,40 @@ export function describeRecurrence(
   const singular = unit.slice(0, -1)
   return count === 1 ? `Every ${singular}` : `Every ${count} ${unit}`
 }
+
+/**
+ * Seeds the "how often" editor's local state from a chore that already has a
+ * recurrence — so opening the edit sheet on an existing chore shows its real
+ * settings instead of resetting to the defaults a brand-new chore starts
+ * with. The inverse of what ChoreAddBar builds *toward*.
+ */
+export function deriveRecurrenceUI(chore: {
+  is_recurring: boolean
+  recurrence_count: number | null
+  recurrence_unit: RecurrenceUnit | null
+  recurrence_days: Weekday[] | null
+}): {
+  mode: 'presets' | 'every' | 'days'
+  preset: (typeof RECURRENCE_PRESETS)[number]
+  custom: { count: string; unit: Exclude<RecurrenceUnit, 'weekdays'> }
+  days: Set<Weekday>
+} {
+  const fallback = {
+    mode: 'presets' as const,
+    preset: RECURRENCE_PRESETS[0],
+    custom: { count: '3', unit: 'days' as const },
+    days: new Set<Weekday>(),
+  }
+  if (!chore.is_recurring || !chore.recurrence_unit) return fallback
+
+  if (chore.recurrence_unit === 'weekdays') {
+    return { ...fallback, mode: 'days', days: new Set(chore.recurrence_days ?? []) }
+  }
+
+  const unit = chore.recurrence_unit
+  const count = chore.recurrence_count ?? 1
+  const preset = RECURRENCE_PRESETS.find((p) => p.count === count && p.unit === unit)
+  return preset
+    ? { ...fallback, mode: 'presets', preset }
+    : { ...fallback, mode: 'every', custom: { count: String(count), unit } }
+}

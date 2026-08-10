@@ -14,6 +14,7 @@ import { ShoppingAddBar } from './features/shopping/ShoppingAddBar'
 import { WishlistTab } from './features/wishlist/WishlistTab'
 import { WishAddBar } from './features/wishlist/WishAddBar'
 import { SettingsSheet } from './features/settings/SettingsSheet'
+import { ItemEditSheet } from './features/items/ItemEditSheet'
 import { PinGate } from './components/shell/PinGate'
 import { Tour, tourSeen } from './components/shell/Tour'
 import { useData, dataActions } from './store/useData'
@@ -235,6 +236,7 @@ export default function App() {
 
       <TabDock />
       <SettingsSheet />
+      <ItemEditSheet />
       <Tour />
       <PulseLayer />
       <Toaster

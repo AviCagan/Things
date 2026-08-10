@@ -7,7 +7,6 @@ import { useData, dataActions } from '@/store/useData'
 import { useProfile } from '@/store/useProfile'
 import { useUI } from '@/store/useUI'
 import { SortBar, compareBy } from '@/components/shell/SortBar'
-import type { Urgency } from '@/data/types'
 
 export function TodosTab() {
   const todos = useData((s) => s.todos)
@@ -59,6 +58,8 @@ export function TodosTab() {
                 transition={{ type: 'spring', stiffness: 400, damping: 32 }}
               >
                 <ListRow
+                  table="todos"
+                  id={todo.id}
                   title={todo.title}
                   urgency={todo.urgency}
                   claimedBy={todo.claimed_by}
@@ -74,7 +75,6 @@ export function TodosTab() {
                       nameOf,
                     )
                   }
-                  onUrgency={(u: Urgency) => dataActions.setUrgency('todos', todo.id, u)}
                 />
               </motion.div>
             ))}
@@ -86,6 +86,8 @@ export function TodosTab() {
         {done.map((todo) => (
           <ListRow
             key={todo.id}
+            table="todos"
+            id={todo.id}
             title={todo.title}
             urgency={todo.urgency}
             claimedBy={todo.claimed_by}
@@ -111,7 +113,6 @@ export function TodosTab() {
             }
             onComplete={() => dataActions.toggleTodo(todo, profileId)}
             onClaim={() => {}}
-            onUrgency={(u: Urgency) => dataActions.setUrgency('todos', todo.id, u)}
           />
         ))}
       </Section>

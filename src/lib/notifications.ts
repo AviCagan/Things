@@ -25,6 +25,15 @@ export type PushState =
   | 'default'
   | 'granted'
   | 'denied'
+  /**
+   * OS/browser permission was granted, but saving the subscription to
+   * Supabase failed. Distinct from 'denied' on purpose — 'denied' tells
+   * someone to go dig through device settings, which is exactly the wrong
+   * advice for a database write that failed. This state exists because that
+   * failure used to be swallowed silently: the UI showed "granted" while
+   * push_subscriptions stayed empty and nothing ever arrived.
+   */
+  | 'error'
 
 export function pushState(): PushState {
   if (isNative()) {
@@ -56,9 +65,15 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 async function saveSubscription(row: Record<string, unknown>): Promise<void> {
   const sb = supabase()
   if (!sb) return
-  await sb.from('push_subscriptions').upsert(row as never, {
+  // Supabase never throws on a query error by default — it resolves with
+  // { error } instead. This went unchecked for a while, which is exactly how
+  // an ON CONFLICT plan failure (see the partial-index fix in
+  // 010_fix_push_upsert.sql) stayed invisible: the write failed every single
+  // time, on every device, and the caller had no way to find out.
+  const { error } = await sb.from('push_subscriptions').upsert(row as never, {
     onConflict: row.platform === 'fcm' ? 'token' : 'endpoint',
   })
+  if (error) throw new Error(error.message)
 }
 
 /**
@@ -74,42 +89,61 @@ export async function enablePush(profileId: string): Promise<PushState> {
 }
 
 async function enableNativePush(profileId: string): Promise<PushState> {
+  let perm
   try {
-    let perm = await PushNotifications.checkPermissions()
+    perm = await PushNotifications.checkPermissions()
     if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') {
       perm = await PushNotifications.requestPermissions()
     }
-    if (perm.receive !== 'granted') return 'denied'
+  } catch (err) {
+    console.error('[push] permission check failed', err)
+    return 'denied'
+  }
+  if (perm.receive !== 'granted') return 'denied'
 
-    await new Promise<void>((resolve, reject) => {
+  let token: string
+  try {
+    token = await new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('registration timed out')), 15_000)
-
-      void PushNotifications.addListener('registration', (token) => {
+      void PushNotifications.addListener('registration', (t) => {
         clearTimeout(timer)
-        void saveSubscription({
-          profile_id: profileId,
-          platform: 'fcm',
-          token: token.value,
-          user_agent: navigator.userAgent,
-          last_seen_at: new Date().toISOString(),
-        }).then(resolve, reject)
+        resolve(t.value)
       })
-
       void PushNotifications.addListener('registrationError', (err) => {
         clearTimeout(timer)
         reject(new Error(String(err.error)))
       })
-
       void PushNotifications.register()
     })
-
-    // Local notifications cover chore cooldowns with no server involved.
-    await LocalNotifications.requestPermissions()
-    return 'granted'
   } catch (err) {
+    // Getting a token from FCM failed — a device/permission problem, so
+    // 'denied' is the accurate state to report.
     console.error('[push] native registration failed', err)
     return 'denied'
   }
+
+  try {
+    await saveSubscription({
+      profile_id: profileId,
+      platform: 'fcm',
+      token,
+      user_agent: navigator.userAgent,
+      last_seen_at: new Date().toISOString(),
+    })
+  } catch (err) {
+    // The token is real, the phone is fine — this is a database problem, not
+    // a permission one. Keeping it distinct from 'denied' matters: the
+    // 'denied' UI tells someone to go check device settings, which would be
+    // exactly the wrong advice here.
+    console.error('[push] could not save subscription', err)
+    return 'error'
+  }
+
+  // Local notifications cover chore cooldowns with no server involved. This
+  // is a nicety, not a requirement — never let it downgrade an otherwise
+  // successful registration.
+  await LocalNotifications.requestPermissions().catch(() => undefined)
+  return 'granted'
 }
 
 async function enableWebPush(profileId: string): Promise<PushState> {
@@ -133,15 +167,22 @@ async function enableWebPush(profileId: string): Promise<PushState> {
     }))
 
   const json = sub.toJSON() as { endpoint?: string; keys?: Record<string, string> }
-  await saveSubscription({
-    profile_id: profileId,
-    platform: 'webpush',
-    endpoint: json.endpoint,
-    p256dh: json.keys?.p256dh,
-    auth: json.keys?.auth,
-    user_agent: navigator.userAgent,
-    last_seen_at: new Date().toISOString(),
-  })
+  try {
+    await saveSubscription({
+      profile_id: profileId,
+      platform: 'webpush',
+      endpoint: json.endpoint,
+      p256dh: json.keys?.p256dh,
+      auth: json.keys?.auth,
+      user_agent: navigator.userAgent,
+      last_seen_at: new Date().toISOString(),
+    })
+  } catch (err) {
+    // Browser permission and the push subscription itself are both fine at
+    // this point — this is a database problem, not a permission one.
+    console.error('[push] could not save subscription', err)
+    return 'error'
+  }
   return 'granted'
 }
 

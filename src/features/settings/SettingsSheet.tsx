@@ -628,12 +628,24 @@ function NotificationsGroup({
 
   async function turnOn() {
     setBusy(true)
-    // Must run inside this click — a permission prompt outside a user gesture
-    // is refused, and on iOS a refusal sticks until the icon is reinstalled.
-    const next = await enablePush(profileId)
-    setState(next)
-    fire(next === 'granted' ? 'success' : 'warning')
-    setBusy(false)
+    try {
+      // Must run inside this click — a permission prompt outside a user
+      // gesture is refused, and on iOS a refusal sticks until the icon is
+      // reinstalled.
+      const next = await enablePush(profileId)
+      setState(next)
+      fire(next === 'granted' ? 'success' : 'warning')
+    } catch (err) {
+      // Belt and braces: enablePush is written to resolve to 'error' rather
+      // than throw, but a stuck "Asking…" button forever is a worse failure
+      // mode than a slightly generic message, if something upstream ever
+      // does throw.
+      console.error('[push] turnOn failed unexpectedly', err)
+      setState('error')
+      fire('warning')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -667,7 +679,17 @@ function NotificationsGroup({
         </p>
       )}
 
-      {(state === 'default' || state === 'granted') && (
+      {state === 'error' && (
+        <p
+          className="rounded-2xl p-3.5 text-[13px] leading-relaxed"
+          style={{ background: 'var(--surface-3)', color: 'var(--warn)' }}
+        >
+          Permission was granted, but saving didn't go through — check your
+          connection and try again below.
+        </p>
+      )}
+
+      {(state === 'default' || state === 'granted' || state === 'error') && (
         <button
           onClick={turnOn}
           disabled={busy || state === 'granted'}
@@ -683,7 +705,9 @@ function NotificationsGroup({
               ? 'Notifications are on'
               : busy
                 ? 'Asking…'
-                : 'Turn on notifications'}
+                : state === 'error'
+                  ? 'Try again'
+                  : 'Turn on notifications'}
           </span>
           {state === 'granted' && <Icon name="check" size={16} strokeWidth={2.6} />}
         </button>

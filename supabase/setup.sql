@@ -1,7 +1,7 @@
 -- Things — complete database setup, in one paste.
 --
 -- Copy this whole file into the Supabase SQL Editor and hit Run, once.
--- It is the same content as 001-004 and 006-009 run in order; those are
+-- It is the same content as 001-004 and 006-010 run in order; those are
 -- kept separate for readability, this is here so setup — and catching a
 -- database up after a feature update — is a single step.
 --
@@ -249,10 +249,19 @@ create table if not exists push_subscriptions (
   )
 );
 
+-- Plain unique indexes, deliberately NOT partial (`where platform = 'fcm'`
+-- etc). Postgres refuses to plan `ON CONFLICT (token)` against a partial
+-- index unless the ON CONFLICT clause repeats the exact predicate — which the
+-- Supabase client's `.upsert({ onConflict: 'token' })` has no way to do. A
+-- partial index here means every single upsert fails at plan time, silently,
+-- because nothing downstream checks the returned error either. A plain index
+-- needs no such predicate: NULL is never equal to NULL under uniqueness, so
+-- the many webpush rows (token always null) never collide with each other,
+-- and the same holds for fcm rows on endpoint.
 create unique index if not exists push_fcm_token_idx
-  on push_subscriptions (token) where platform = 'fcm';
+  on push_subscriptions (token);
 create unique index if not exists push_webpush_endpoint_idx
-  on push_subscriptions (endpoint) where platform = 'webpush';
+  on push_subscriptions (endpoint);
 
 -- ---------------------------------------------------------------------------
 -- Triggers
@@ -435,6 +444,22 @@ begin
   new.updated_at := now();
   return new;
 end $$;
+
+-- 010_fix_push_upsert.sql — the two indexes below were PARTIAL (`where
+-- platform = 'fcm'` / `'webpush'`). Postgres refuses to plan the app's
+-- `insert ... on conflict (token) do update ...` against a partial index
+-- unless the ON CONFLICT clause repeats that exact predicate, which the
+-- Supabase client's `.upsert({ onConflict: 'token' })` has no way to do —
+-- so every push registration failed at the database level, on every device,
+-- silently, from the very first one. `create index if not exists` alone
+-- would NOT fix this on a database that already has the old partial index
+-- under this name; the drop is what actually replaces its definition.
+drop index if exists push_fcm_token_idx;
+drop index if exists push_webpush_endpoint_idx;
+create unique index if not exists push_fcm_token_idx
+  on push_subscriptions (token);
+create unique index if not exists push_webpush_endpoint_idx
+  on push_subscriptions (endpoint);
 
 
 -- ==========================================================================

@@ -19,7 +19,7 @@ import {
   isResting,
   readyIn,
 } from '@/lib/time'
-import type { Chore, Urgency } from '@/data/types'
+import type { Chore } from '@/data/types'
 
 export function ChoresTab() {
   const chores = useData((s) => s.chores)
@@ -78,6 +78,8 @@ export function ChoresTab() {
                 transition={{ type: 'spring', stiffness: 380, damping: 30 }}
               >
                 <ListRow
+                  table="chores"
+                  id={chore.id}
                   title={chore.title}
                   urgency={chore.urgency}
                   claimedBy={chore.claimed_by}
@@ -106,7 +108,6 @@ export function ChoresTab() {
                       nameOf,
                     )
                   }
-                  onUrgency={(u: Urgency) => dataActions.setUrgency('chores', chore.id, u)}
                 />
               </motion.div>
             ))}
@@ -150,6 +151,8 @@ export function ChoresTab() {
         {done.map((chore) => (
           <ListRow
             key={chore.id}
+            table="chores"
+            id={chore.id}
             title={chore.title}
             urgency={chore.urgency}
             claimedBy={chore.claimed_by}
@@ -170,7 +173,6 @@ export function ChoresTab() {
             }
             onComplete={() => dataActions.completeChore(chore, profileId)}
             onClaim={() => {}}
-            onUrgency={(u: Urgency) => dataActions.setUrgency('chores', chore.id, u)}
           />
         ))}
       </Section>
@@ -236,7 +238,16 @@ function RestingCard({
     >
       <CooldownRing progress={progress} />
 
-      <div className="min-w-0 flex-1">
+      {/* No swipe gesture competes for a tap here, unlike an active row —
+          so a plain tap opens editing rather than needing a long-press. */}
+      <button
+        type="button"
+        onClick={() => {
+          fire('tap')
+          useUI.getState().openSheet({ kind: 'item', table: 'chores', id: chore.id })
+        }}
+        className="min-w-0 flex-1 text-left"
+      >
         <div className="truncate text-[14px] font-medium" style={{ color: 'var(--text-dim)' }}>
           {chore.title}
         </div>
@@ -244,7 +255,7 @@ function RestingCard({
           Ready in {readyIn(chore, now)}
           {chore.last_completed_by && ` · ${nameOf(chore.last_completed_by)} did it`}
         </div>
-      </div>
+      </button>
 
       {confirming ? (
         <div className="flex items-center gap-1">

@@ -10,7 +10,7 @@ import { SortBar, compareBy } from '@/components/shell/SortBar'
 import { fire } from '@/lib/haptics'
 import { StoresSheet } from './StoresSheet'
 import { TripSheet } from './TripSheet'
-import type { ShoppingItem, Store, Urgency } from '@/data/types'
+import type { ShoppingItem, Store } from '@/data/types'
 
 const UNSORTED = '__unsorted__'
 
@@ -162,6 +162,8 @@ export function ShoppingTab() {
           {groups.done.map((item) => (
             <ListRow
               key={item.id}
+              table="shopping_items"
+              id={item.id}
               title={item.title}
               urgency={item.urgency}
               claimedBy={item.claimed_by}
@@ -182,7 +184,6 @@ export function ShoppingTab() {
               }
               onComplete={() => dataActions.toggleShoppingItem(item)}
               onClaim={() => {}}
-              onUrgency={(u: Urgency) => dataActions.setUrgency('shopping_items', item.id, u)}
             />
           ))}
         </Section>
@@ -245,6 +246,8 @@ function StoreGroup({
               {items.map((item) => (
                 <ListRow
                   key={item.id}
+                  table="shopping_items"
+                  id={item.id}
                   title={item.title}
                   urgency={item.urgency}
                   claimedBy={item.claimed_by}
@@ -260,9 +263,6 @@ function StoreGroup({
                       item.claimed_by,
                       nameOf,
                     )
-                  }
-                  onUrgency={(u: Urgency) =>
-                    dataActions.setUrgency('shopping_items', item.id, u)
                   }
                 />
               ))}

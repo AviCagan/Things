@@ -199,14 +199,6 @@ async function fireNative(level: Level): Promise<void> {
   }
 }
 
-/**
- * Continuous selection feedback for drag-reorder and the urgency wheel, where a
- * stream of ticks is exactly right. Rate-limited like everything else.
- */
-export function selectionTick(): void {
-  fire('snap')
-}
-
 export const ALL_HAPTIC_EVENTS = Object.keys(EVENTS) as HapticEventName[]
 
 /** True when this device can actually produce a haptic, for honest UI copy. */
