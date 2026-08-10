@@ -54,9 +54,11 @@ in one go, and it's safe to re-run.
 > | `006_avatars.sql` | Profile photos |
 > | `007_list_settings.sql` | Auto-clearing finished items, custom repeat quick picks, yearly chores |
 > | `008_calendar.sql` | Google Calendar sync |
+> | `009_weekday_recurrence.sql` | Chores that repeat on specific days of the week |
 >
-> Without `007`, setting a chore to repeat *yearly* fails; without `006`,
-> changing a profile photo does.
+> Without `007`, setting a chore to repeat *yearly* fails; without `009`,
+> picking specific weekdays fails; without `006`, changing a profile photo
+> does.
 
 ## 3. Create the household account
 

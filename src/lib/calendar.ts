@@ -1,5 +1,5 @@
 import { SUPABASE_URL } from './env'
-import type { Chore, RecurrenceUnit } from '@/data/types'
+import type { Chore, RecurrenceUnit, Weekday } from '@/data/types'
 
 /**
  * Two ways to get chores into Google Calendar, because neither one alone is
@@ -17,13 +17,16 @@ import type { Chore, RecurrenceUnit } from '@/data/types'
  * want something on the calendar immediately.
  */
 
-const FREQ: Record<RecurrenceUnit, string> = {
+const FREQ: Record<Exclude<RecurrenceUnit, 'weekdays'>, string> = {
   hours: 'HOURLY',
   days: 'DAILY',
   weeks: 'WEEKLY',
   months: 'MONTHLY',
   years: 'YEARLY',
 }
+
+/** RFC 5545 BYDAY codes, indexed 0 (Sunday) .. 6 (Saturday) — same convention as everywhere else. */
+const BYDAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 
 /** Chores have no duration; half an hour is a choice that reads well on a grid. */
 export const EVENT_MINUTES = 30
@@ -36,15 +39,37 @@ export const ALARM_OPTIONS: { minutes: number; label: string }[] = [
   { minutes: 1440, label: '1 day' },
 ]
 
-/** "RRULE:FREQ=WEEKLY;INTERVAL=2", or null when the chore doesn't repeat. */
+/**
+ * "RRULE:FREQ=WEEKLY;INTERVAL=2", or "RRULE:FREQ=WEEKLY;BYDAY=TU,WE" for a
+ * chore repeating on chosen weekdays. Null when the chore doesn't repeat.
+ */
 export function rruleFor(
   count: number | null,
   unit: RecurrenceUnit | null,
+  days: Weekday[] | null = null,
 ): string | null {
+  if (unit === 'weekdays') {
+    if (!days?.length) return null
+    const codes = [...days].sort((a, b) => a - b).map((d) => BYDAY[d])
+    return `RRULE:FREQ=WEEKLY;BYDAY=${codes.join(',')}`
+  }
   if (!count || !unit) return null
   const freq = FREQ[unit]
   if (!freq) return null
   return `RRULE:FREQ=${freq};INTERVAL=${Math.max(1, Math.round(count))}`
+}
+
+/**
+ * The first date on or after `from` whose local weekday is in `days`. Used so
+ * a never-completed weekday chore's calendar event always lands on one of the
+ * chosen days rather than on whatever day "now" happens to be.
+ */
+function nextMatchingWeekday(from: Date, days: Weekday[]): Date {
+  for (let step = 0; step < 7; step++) {
+    const candidate = new Date(from.getTime() + step * 86_400_000)
+    if (days.includes(candidate.getDay() as Weekday)) return candidate
+  }
+  return from
 }
 
 /** 2026-08-09T14:00:00.000Z → 20260809T140000Z (the only format Google takes). */
@@ -100,10 +125,13 @@ export function googleSubscribeUrl(token: string | null): string {
  * put an event on.
  */
 export function googleEventUrl(chore: Chore, now = Date.now()): string | null {
-  const recur = rruleFor(chore.recurrence_count, chore.recurrence_unit)
+  const recur = rruleFor(chore.recurrence_count, chore.recurrence_unit, chore.recurrence_days)
   if (!chore.is_recurring || !recur) return null
 
-  const start = nextOccurrence(chore, now)
+  let start = nextOccurrence(chore, now)
+  if (chore.recurrence_unit === 'weekdays' && !chore.next_due_at) {
+    start = nextMatchingWeekday(start, chore.recurrence_days ?? [])
+  }
   const end = new Date(start.getTime() + EVENT_MINUTES * 60_000)
 
   const params = new URLSearchParams({

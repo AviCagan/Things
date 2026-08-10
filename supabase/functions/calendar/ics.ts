@@ -6,15 +6,22 @@
 // the kind of bug you only notice a week later, so it is worth testing the
 // bytes that actually ship.
 
-export type Unit = 'hours' | 'days' | 'weeks' | 'months' | 'years'
+export type Unit = 'hours' | 'days' | 'weeks' | 'months' | 'years' | 'weekdays'
 
-export const FREQ: Record<Unit, string> = {
+export const FREQ: Record<Exclude<Unit, 'weekdays'>, string> = {
   hours: 'HOURLY',
   days: 'DAILY',
   weeks: 'WEEKLY',
   months: 'MONTHLY',
   years: 'YEARLY',
 }
+
+/**
+ * RFC 5545 §3.3.10 BYDAY codes, indexed 0 (Sunday) .. 6 (Saturday) — the same
+ * convention used everywhere else in the app, so no reordering is needed to
+ * use this table.
+ */
+export const BYDAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 
 export interface ChoreRow {
   id: string
@@ -23,6 +30,8 @@ export interface ChoreRow {
   is_recurring: boolean
   recurrence_count: number | null
   recurrence_unit: Unit | null
+  /** Only set when recurrence_unit is 'weekdays'. 0 (Sunday) .. 6 (Saturday). */
+  recurrence_days: number[] | null
   next_due_at: string | null
   created_at: string
 }
@@ -33,6 +42,23 @@ export const EVENT_MINUTES = 30
 /** 2026-08-09T14:00:00.000Z → 20260809T140000Z */
 export function stamp(d: Date): string {
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+}
+
+/**
+ * The first date on or after `from` whose UTC weekday is in `days`. Used so
+ * DTSTART for a never-completed weekday chore always lands on one of the
+ * chosen days rather than on `created_at`'s own — arbitrary — weekday. RFC
+ * 5545 permits a DTSTART that BYDAY doesn't match, but not every calendar
+ * client renders that cleanly, and once the chore is completed once,
+ * `next_due_at` will already be a matching day regardless — so events are
+ * consistent from the very first one.
+ */
+export function nextMatchingWeekday(from: Date, days: number[]): Date {
+  for (let step = 0; step < 7; step++) {
+    const candidate = new Date(from.getTime() + step * 86_400_000)
+    if (days.includes(candidate.getUTCDay())) return candidate
+  }
+  return from
 }
 
 /**
@@ -76,6 +102,32 @@ export function fold(line: string): string {
   return parts[0] + parts.slice(1).map((s) => `\r\n ${s}`).join('')
 }
 
+/** "RRULE:FREQ=WEEKLY;BYDAY=TU,WE" or "RRULE:FREQ=DAILY;INTERVAL=2" — or null. */
+export function rrule(c: Pick<ChoreRow, 'recurrence_unit' | 'recurrence_count' | 'recurrence_days'>): string | null {
+  if (c.recurrence_unit === 'weekdays') {
+    if (!c.recurrence_days?.length) return null
+    const days = [...c.recurrence_days].sort((a, b) => a - b).map((d) => BYDAY[d])
+    return `RRULE:FREQ=WEEKLY;BYDAY=${days.join(',')}`
+  }
+  if (!c.recurrence_unit || !c.recurrence_count) return null
+  const freq = FREQ[c.recurrence_unit]
+  if (!freq) return null
+  return `RRULE:FREQ=${freq};INTERVAL=${Math.max(1, Math.round(c.recurrence_count))}`
+}
+
+function describe(c: Pick<ChoreRow, 'recurrence_unit' | 'recurrence_count' | 'recurrence_days'>): string {
+  if (c.recurrence_unit === 'weekdays' && c.recurrence_days?.length) {
+    const names = [...c.recurrence_days]
+      .sort((a, b) => a - b)
+      .map((d) => ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'][d])
+    return `Repeats on ${names.join(', ')}`
+  }
+  if (!c.recurrence_unit || !c.recurrence_count) return ''
+  return c.recurrence_count === 1
+    ? `Repeats every ${c.recurrence_unit.slice(0, -1)}`
+    : `Repeats every ${c.recurrence_count} ${c.recurrence_unit}`
+}
+
 export function buildCalendar(
   chores: ChoreRow[],
   alarmMinutes: number,
@@ -95,20 +147,18 @@ export function buildCalendar(
   ]
 
   for (const c of chores) {
-    if (!c.is_recurring || !c.recurrence_count || !c.recurrence_unit) continue
-    const freq = FREQ[c.recurrence_unit]
-    if (!freq) continue
+    if (!c.is_recurring) continue
+    const rule = rrule(c)
+    if (!rule) continue
 
     // A chore that has never been completed is due now, and next_due_at stays
     // null until the first completion — so the creation time is the anchor.
-    const start = new Date(c.next_due_at ?? c.created_at)
+    let start = new Date(c.next_due_at ?? c.created_at)
     if (Number.isNaN(start.getTime())) continue
+    if (c.recurrence_unit === 'weekdays' && !c.next_due_at) {
+      start = nextMatchingWeekday(start, c.recurrence_days ?? [])
+    }
     const end = new Date(start.getTime() + EVENT_MINUTES * 60_000)
-
-    const every =
-      c.recurrence_count === 1
-        ? `Repeats every ${c.recurrence_unit.slice(0, -1)}`
-        : `Repeats every ${c.recurrence_count} ${c.recurrence_unit}`
 
     lines.push(
       'BEGIN:VEVENT',
@@ -118,9 +168,9 @@ export function buildCalendar(
       `DTSTAMP:${stamp(now)}`,
       `DTSTART:${stamp(start)}`,
       `DTEND:${stamp(end)}`,
-      `RRULE:FREQ=${freq};INTERVAL=${Math.max(1, Math.round(c.recurrence_count))}`,
+      rule,
       `SUMMARY:${esc(c.title)}`,
-      `DESCRIPTION:${esc([every, c.notes ?? ''].filter(Boolean).join('\n\n'))}`,
+      `DESCRIPTION:${esc([describe(c), c.notes ?? ''].filter(Boolean).join('\n\n'))}`,
       'TRANSP:TRANSPARENT',
     )
 

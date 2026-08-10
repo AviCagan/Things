@@ -19,6 +19,7 @@ const row = (patch: Partial<ChoreRow> = {}): ChoreRow => ({
   is_recurring: true,
   recurrence_count: 1,
   recurrence_unit: 'weeks',
+  recurrence_days: null,
   next_due_at: '2026-08-10T09:00:00.000Z',
   created_at: '2026-08-01T00:00:00.000Z',
   ...patch,
@@ -125,5 +126,72 @@ describe('buildCalendar', () => {
     const ics = buildCalendar([row({ id: 'a' }), row({ id: 'b' })], 15, NOW)
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(2)
     expect(ics.match(/END:VEVENT/g)).toHaveLength(2)
+  })
+})
+
+describe('buildCalendar: weekday mode', () => {
+  it('emits BYDAY ordered Sun→Sat, not selection order', () => {
+    const ics = buildCalendar(
+      [row({ recurrence_unit: 'weekdays', recurrence_count: null, recurrence_days: [5, 0, 4] })],
+      0,
+      NOW,
+    )
+    expect(ics).toContain('RRULE:FREQ=WEEKLY;BYDAY=SU,TH,FR')
+  })
+
+  it('anchors on next_due_at exactly like interval mode', () => {
+    // 2026-08-11 is a Tuesday, matching the [2,3] selection — verified
+    // separately against the actual Postgres trigger for this same case.
+    const ics = buildCalendar(
+      [
+        row({
+          recurrence_unit: 'weekdays',
+          recurrence_count: null,
+          recurrence_days: [2, 3],
+          next_due_at: '2026-08-11T09:00:00.000Z',
+        }),
+      ],
+      0,
+      NOW,
+    )
+    expect(ics).toContain('DTSTART:20260811T090000Z')
+    expect(ics).toContain('DTEND:20260811T093000Z')
+  })
+
+  it('rounds a never-completed chore forward to a matching weekday', () => {
+    // created_at is a Saturday (2026-08-01); Tue/Wed selected, so DTSTART
+    // must not be Saturday — it should land on the following Tuesday.
+    const ics = buildCalendar(
+      [
+        row({
+          recurrence_unit: 'weekdays',
+          recurrence_count: null,
+          recurrence_days: [2, 3],
+          next_due_at: null,
+          created_at: '2026-08-01T00:00:00.000Z',
+        }),
+      ],
+      0,
+      NOW,
+    )
+    expect(ics).toContain('DTSTART:20260804T000000Z')
+  })
+
+  it('is skipped entirely with no days chosen, rather than crashing', () => {
+    const ics = buildCalendar(
+      [row({ recurrence_unit: 'weekdays', recurrence_count: null, recurrence_days: [] })],
+      0,
+      NOW,
+    )
+    expect(ics).not.toContain('BEGIN:VEVENT')
+  })
+
+  it('describes the chosen days in the event body', () => {
+    const ics = buildCalendar(
+      [row({ recurrence_unit: 'weekdays', recurrence_count: null, recurrence_days: [0, 4, 5] })],
+      0,
+      NOW,
+    )
+    expect(ics).toContain('Repeats on Sundays\\, Thursdays\\, Fridays')
   })
 })

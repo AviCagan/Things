@@ -1,7 +1,7 @@
 import { get, set } from 'idb-keyval'
 import type { ChangeHandler, DataAdapter, TableMap, TableName } from './adapter'
 import { TABLES, nowIso } from './adapter'
-import type { Chore } from './types'
+import type { Chore, Weekday } from './types'
 
 /**
  * IndexedDB-backed adapter.
@@ -138,9 +138,24 @@ export function createLocalAdapter(): DataAdapter {
  * identically before and after Supabase is wired up.
  */
 export function computeNextDue(chore: Chore): string | null {
-  if (!chore.is_recurring || !chore.last_completed_at) return null
-  if (!chore.recurrence_count || !chore.recurrence_unit) return null
+  if (!chore.is_recurring || !chore.last_completed_at || !chore.recurrence_unit) return null
 
+  if (chore.recurrence_unit === 'weekdays') {
+    if (!chore.recurrence_days?.length) return null
+    // Mirrors the Postgres trigger's loop: walk forward at most 7 days to the
+    // next one that falls on a selected weekday.
+    const start = new Date(chore.last_completed_at)
+    for (let step = 1; step <= 7; step++) {
+      const candidate = new Date(start)
+      candidate.setDate(candidate.getDate() + step)
+      if (chore.recurrence_days.includes(candidate.getDay() as Weekday)) {
+        return candidate.toISOString()
+      }
+    }
+    return null
+  }
+
+  if (!chore.recurrence_count) return null
   const d = new Date(chore.last_completed_at)
   const n = chore.recurrence_count
   switch (chore.recurrence_unit) {

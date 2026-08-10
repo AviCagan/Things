@@ -15,6 +15,7 @@ const chore = (patch: Partial<Chore> = {}): Chore => ({
   is_recurring: true,
   recurrence_count: 1,
   recurrence_unit: 'weeks',
+  recurrence_days: null,
   last_completed_at: null,
   last_completed_by: null,
   next_due_at: null,
@@ -39,6 +40,16 @@ describe('rruleFor', () => {
 
   it('never emits INTERVAL=0, which every calendar rejects', () => {
     expect(rruleFor(0.4, 'days')).toBe('RRULE:FREQ=DAILY;INTERVAL=1')
+  })
+
+  it('builds BYDAY for weekday mode, ordered Sun→Sat', () => {
+    expect(rruleFor(null, 'weekdays', [2, 3])).toBe('RRULE:FREQ=WEEKLY;BYDAY=TU,WE')
+    expect(rruleFor(null, 'weekdays', [5, 0, 4])).toBe('RRULE:FREQ=WEEKLY;BYDAY=SU,TH,FR')
+  })
+
+  it('is null for weekday mode with no days chosen', () => {
+    expect(rruleFor(null, 'weekdays', [])).toBeNull()
+    expect(rruleFor(null, 'weekdays', null)).toBeNull()
   })
 })
 
@@ -75,5 +86,44 @@ describe('googleEventUrl', () => {
   it('is null for a chore that does not repeat', () => {
     expect(googleEventUrl(chore({ is_recurring: false }))).toBeNull()
     expect(googleEventUrl(chore({ recurrence_unit: null }))).toBeNull()
+  })
+
+  it('is null for weekday mode with no days chosen', () => {
+    expect(
+      googleEventUrl(chore({ recurrence_unit: 'weekdays', recurrence_count: null, recurrence_days: [] })),
+    ).toBeNull()
+  })
+
+  it('carries BYDAY for weekday mode', () => {
+    const now = Date.parse('2026-08-09T12:00:00.000Z') // a Sunday
+    const url = googleEventUrl(
+      chore({
+        recurrence_unit: 'weekdays',
+        recurrence_count: null,
+        recurrence_days: [2, 3],
+        next_due_at: '2026-08-11T09:00:00.000Z',
+      }),
+      now,
+    )!
+    const params = new URL(url).searchParams
+    expect(params.get('recur')).toBe('RRULE:FREQ=WEEKLY;BYDAY=TU,WE')
+    expect(params.get('dates')).toBe('20260811T090000Z/20260811T093000Z')
+  })
+
+  it('rounds a never-completed weekday chore forward to a matching day', () => {
+    // 2026-08-06 is a Thursday; Tue/Wed selected means the nearest match is
+    // the following Tuesday, 2026-08-11 — the same date the DB trigger
+    // computes for an identical case (verified separately against Postgres).
+    const now = Date.parse('2026-08-06T12:00:00.000Z')
+    const url = googleEventUrl(
+      chore({
+        recurrence_unit: 'weekdays',
+        recurrence_count: null,
+        recurrence_days: [2, 3],
+        next_due_at: null,
+      }),
+      now,
+    )!
+    expect(new URL(url).searchParams.get('dates')).toBe('20260811T120000Z/20260811T123000Z')
   })
 })

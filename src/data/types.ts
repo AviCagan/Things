@@ -34,7 +34,24 @@ export const DESIRE_META: Record<Desire, { label: string }> = {
   5: { label: 'Must have' },
 }
 
-export type RecurrenceUnit = 'hours' | 'days' | 'weeks' | 'months' | 'years'
+export type RecurrenceUnit = 'hours' | 'days' | 'weeks' | 'months' | 'years' | 'weekdays'
+
+/**
+ * 0 (Sunday) .. 6 (Saturday) — matching both JS `Date.getDay()` and Postgres
+ * `extract(dow from ...)`, so no conversion table has to be kept in step on
+ * either side of the wire.
+ */
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+export const WEEKDAY_LABELS: Record<Weekday, { short: string; letter: string }> = {
+  0: { short: 'Sun', letter: 'S' },
+  1: { short: 'Mon', letter: 'M' },
+  2: { short: 'Tue', letter: 'T' },
+  3: { short: 'Wed', letter: 'W' },
+  4: { short: 'Thu', letter: 'T' },
+  5: { short: 'Fri', letter: 'F' },
+  6: { short: 'Sat', letter: 'S' },
+}
 export type ThemeMode = 'system' | 'light' | 'dark' | 'oled'
 export type HapticIntensity = 'off' | 'subtle' | 'normal' | 'heavy'
 export type NavApp = 'google' | 'waze' | 'apple'
@@ -143,8 +160,11 @@ export interface Todo extends ListItemBase {
 export interface Chore extends ListItemBase {
   notes: string | null
   is_recurring: boolean
+  /** Null when recurrence_unit is 'weekdays' — that mode is driven by recurrence_days instead. */
   recurrence_count: number | null
   recurrence_unit: RecurrenceUnit | null
+  /** Set only when recurrence_unit is 'weekdays'. e.g. [2, 3] for "Tuesdays and Wednesdays". */
+  recurrence_days: Weekday[] | null
   last_completed_at: string | null
   last_completed_by: string | null
   /** Maintained by a DB trigger — generated columns can't do this (see plan). */

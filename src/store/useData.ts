@@ -10,9 +10,19 @@ import type {
   Store as ShopStore,
   Todo,
   Urgency,
+  Weekday,
   WishlistItem,
   Desire,
 } from '@/data/types'
+
+/**
+ * What the add-chore UI hands over: either an interval ("every 3 days") or a
+ * fixed set of weekdays ("Tue & Wed") — never both, matching the database's
+ * own recurrence_complete constraint.
+ */
+export type Recurrence =
+  | { unit: Exclude<RecurrenceUnit, 'weekdays'>; count: number }
+  | { unit: 'weekdays'; days: Weekday[] }
 import { fire } from '@/lib/haptics'
 import { scheduleCooldownReminder, cancelCooldownReminder } from '@/lib/notifications'
 
@@ -183,7 +193,7 @@ export const dataActions = {
     title: string,
     urgency: Urgency,
     profileId: string | null,
-    recurrence: { count: number; unit: RecurrenceUnit } | null,
+    recurrence: Recurrence | null,
   ) {
     const row: Chore = {
       ...baseFields(profileId),
@@ -191,8 +201,9 @@ export const dataActions = {
       notes: null,
       urgency,
       is_recurring: recurrence !== null,
-      recurrence_count: recurrence?.count ?? null,
+      recurrence_count: recurrence && recurrence.unit !== 'weekdays' ? recurrence.count : null,
       recurrence_unit: recurrence?.unit ?? null,
+      recurrence_days: recurrence && recurrence.unit === 'weekdays' ? recurrence.days : null,
       last_completed_at: null,
       last_completed_by: null,
       next_due_at: null,

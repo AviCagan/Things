@@ -96,7 +96,10 @@ create table if not exists chores (
 
   is_recurring      boolean not null default false,
   recurrence_count  integer check (recurrence_count > 0),
-  recurrence_unit   text check (recurrence_unit in ('hours','days','weeks','months','years')),
+  recurrence_unit   text check (recurrence_unit in ('hours','days','weeks','months','years','weekdays')),
+  -- Set only when recurrence_unit = 'weekdays'. 0 (Sunday) .. 6 (Saturday) —
+  -- matches both JS Date.getDay() and Postgres's own extract(dow from ...).
+  recurrence_days   smallint[],
 
   last_completed_at timestamptz,
   last_completed_by uuid references profiles(id) on delete set null,
@@ -114,9 +117,17 @@ create table if not exists chores (
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now(),
 
+  -- A weekday-mode chore has no meaningful count, and every other mode has no
+  -- meaningful day set — enforced so the two shapes can never be set together
+  -- or left half-filled.
   constraint recurrence_complete check (
-    (is_recurring and recurrence_count is not null and recurrence_unit is not null)
-    or (not is_recurring and recurrence_count is null and recurrence_unit is null)
+    (not is_recurring
+      and recurrence_count is null and recurrence_unit is null and recurrence_days is null)
+    or (is_recurring and recurrence_unit = 'weekdays'
+      and recurrence_count is null
+      and recurrence_days is not null and cardinality(recurrence_days) > 0)
+    or (is_recurring and recurrence_unit <> 'weekdays'
+      and recurrence_count is not null and recurrence_days is null)
   )
 );
 
@@ -252,15 +263,33 @@ end $$;
 */
 create or replace function compute_next_due() returns trigger
 language plpgsql as $$
+declare
+  step int;
+  candidate timestamptz;
 begin
   if new.is_recurring and new.last_completed_at is not null then
-    new.next_due_at := new.last_completed_at + make_interval(
-      hours  => case when new.recurrence_unit = 'hours'  then new.recurrence_count else 0 end,
-      days   => case when new.recurrence_unit = 'days'   then new.recurrence_count else 0 end,
-      weeks  => case when new.recurrence_unit = 'weeks'  then new.recurrence_count else 0 end,
-      months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end,
-      years  => case when new.recurrence_unit = 'years'  then new.recurrence_count else 0 end
-    );
+    if new.recurrence_unit = 'weekdays' then
+      -- Walk forward at most 7 days to the next one that falls on a selected
+      -- weekday. A loop rather than arithmetic: "next Tuesday or Wednesday,
+      -- whichever comes first, from an arbitrary weekday" has no closed form
+      -- worth the complexity at 7 iterations.
+      new.next_due_at := null;
+      for step in 1..7 loop
+        candidate := new.last_completed_at + (step || ' days')::interval;
+        if extract(dow from candidate)::int = any(new.recurrence_days) then
+          new.next_due_at := candidate;
+          exit;
+        end if;
+      end loop;
+    else
+      new.next_due_at := new.last_completed_at + make_interval(
+        hours  => case when new.recurrence_unit = 'hours'  then new.recurrence_count else 0 end,
+        days   => case when new.recurrence_unit = 'days'   then new.recurrence_count else 0 end,
+        weeks  => case when new.recurrence_unit = 'weeks'  then new.recurrence_count else 0 end,
+        months => case when new.recurrence_unit = 'months' then new.recurrence_count else 0 end,
+        years  => case when new.recurrence_unit = 'years'  then new.recurrence_count else 0 end
+      );
+    end if;
   else
     new.next_due_at := null;
   end if;

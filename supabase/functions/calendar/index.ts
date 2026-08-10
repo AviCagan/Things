@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
   const { data: chores, error } = await db
     .from('chores')
     .select(
-      'id, title, notes, is_recurring, recurrence_count, recurrence_unit, next_due_at, created_at',
+      'id, title, notes, is_recurring, recurrence_count, recurrence_unit, recurrence_days, next_due_at, created_at',
     )
     .eq('is_recurring', true)
     .eq('is_done', false)

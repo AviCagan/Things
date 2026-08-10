@@ -1,4 +1,5 @@
-import type { Chore, RecurrenceUnit } from '@/data/types'
+import type { Chore, RecurrenceUnit, Weekday } from '@/data/types'
+import { WEEKDAY_LABELS } from '@/data/types'
 
 /**
  * Cooldown state is *derived on the client*, never pushed.
@@ -49,7 +50,7 @@ export function readyIn(chore: Chore, now: number): string {
 export const RECURRENCE_PRESETS: {
   label: string
   count: number
-  unit: RecurrenceUnit
+  unit: Exclude<RecurrenceUnit, 'weekdays'>
 }[] = [
   { label: 'Daily', count: 1, unit: 'days' },
   { label: 'Every 2 days', count: 2, unit: 'days' },
@@ -60,11 +61,22 @@ export const RECURRENCE_PRESETS: {
   { label: 'Yearly', count: 1, unit: 'years' },
 ]
 
+/** "Tue & Wed", "Sun, Thu & Fri" — ordered Sun→Sat regardless of pick order. */
+export function describeWeekdays(days: Weekday[]): string {
+  const ordered = [...days].sort((a, b) => a - b)
+  const names = ordered.map((d) => WEEKDAY_LABELS[d].short)
+  if (names.length <= 1) return names.join('')
+  return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`
+}
+
 export function describeRecurrence(
   count: number | null,
   unit: RecurrenceUnit | null,
+  days: Weekday[] | null = null,
 ): string {
-  if (!count || !unit) return ''
+  if (!unit) return ''
+  if (unit === 'weekdays') return days?.length ? describeWeekdays(days) : ''
+  if (!count) return ''
   const preset = RECURRENCE_PRESETS.find((p) => p.count === count && p.unit === unit)
   if (preset) return preset.label
   const singular = unit.slice(0, -1)

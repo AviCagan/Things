@@ -86,7 +86,11 @@ export function ChoresTab() {
                     chore.is_recurring ? (
                       <span className="flex items-center gap-1">
                         <Icon name="repeat" size={11} strokeWidth={2.4} />
-                        {describeRecurrence(chore.recurrence_count, chore.recurrence_unit)}
+                        {describeRecurrence(
+                          chore.recurrence_count,
+                          chore.recurrence_unit,
+                          chore.recurrence_days,
+                        )}
                       </span>
                     ) : undefined
                   }
