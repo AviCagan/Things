@@ -48,6 +48,11 @@ function rowFor(
 ): Record<string, unknown> {
   const now = new Date().toISOString()
   const base = {
+    // The list tables declare `id uuid primary key` with NO default — every
+    // id in this app is minted client-side so an optimistic row and its
+    // realtime echo share identity. That makes generating one here mandatory,
+    // not a nicety: without it the insert fails outright.
+    id: crypto.randomUUID(),
     title,
     created_by: profileId,
     sort_order: Date.now(),
