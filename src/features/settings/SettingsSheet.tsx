@@ -673,9 +673,35 @@ function VoiceGroup({
 }) {
   const [copied, setCopied] = useState<string | null>(null)
   const token = household?.voice_token ?? null
+  const stores = useData((s) => s.stores)
 
   const patch = (p: Partial<HouseholdSettings>) =>
     void dataActions.patchRow('household_settings', 'singleton', p)
+
+  /*
+    One link per list, then one per physical shop. A per-store shortcut is the
+    shortest thing to say — "Add to Costco", then just the item — and it can't
+    be misheard. Saying "milk at Costco" into the plain Shopping shortcut works
+    too, since the endpoint matches spoken store names against the real ones,
+    but that depends on speech-to-text getting the shop's name right.
+
+    Online stores are left out: they're excluded from trip planning and an item
+    filed under one is really a link to paste, not something to dictate.
+  */
+  const links = [
+    ...VOICE_LISTS.map((l) => ({
+      key: l.list,
+      label: l.label,
+      url: voiceUrl(token, l.list, profileSlug),
+    })),
+    ...stores
+      .filter((st) => !st.is_online)
+      .map((st) => ({
+        key: `store:${st.id}`,
+        label: st.name,
+        url: voiceUrl(token, 'shopping_items', profileSlug, st.name),
+      })),
+  ]
 
   if (!isConfigured()) return null
 
@@ -691,17 +717,16 @@ function VoiceGroup({
       {token && (
         <>
           <div className="flex flex-col gap-1.5">
-            {VOICE_LISTS.map((l) => {
-              const url = voiceUrl(token, l.list, profileSlug)
-              const isCopied = copied === l.list
+            {links.map((l) => {
+              const isCopied = copied === l.key
               return (
                 <button
-                  key={l.list}
+                  key={l.key}
                   onClick={async () => {
                     try {
-                      await copyToClipboard(url)
+                      await copyToClipboard(l.url)
                       fire('success')
-                      setCopied(l.list)
+                      setCopied(l.key)
                       setTimeout(() => setCopied(null), 1600)
                     } catch {
                       fire('warning')
@@ -729,9 +754,13 @@ function VoiceGroup({
           >
             <p>
               <strong style={{ color: 'var(--text)' }}>iPhone (Siri).</strong> Shortcuts
-              app → new shortcut → “Get Contents of URL” → paste a link above →
-              replace <code>TEXT</code> with the Ask&nbsp;for&nbsp;Input variable.
-              Name it “Add to shopping” and that becomes the phrase Siri listens for.
+              app → new shortcut. Add <em>“Ask for Input”</em> first, then
+              <em> “Get Contents of URL”</em> — that order matters, because the
+              first action is what creates the variable the second one needs.
+              Paste a link into the URL field, delete the trailing{' '}
+              <code>TEXT</code>, and insert the <em>Provided&nbsp;Input</em>{' '}
+              variable in its place. Whatever you name the shortcut is the
+              phrase Siri listens for. Make it a Shortcut, not an Automation.
             </p>
             <p>
               <strong style={{ color: 'var(--text)' }}>Google / Gemini.</strong> Google

@@ -45,6 +45,7 @@ function rowFor(
   title: string,
   urgency: number,
   profileId: string | null,
+  storeId: string | null,
 ): Record<string, unknown> {
   const now = new Date().toISOString()
   const base = {
@@ -70,7 +71,7 @@ function rowFor(
     // with a schedule attached, which is not something to infer from a phrase.
     return { ...base, urgency, claimed_by: null, is_recurring: false, is_done: false }
   }
-  return { ...base, urgency, claimed_by: null, is_done: false }
+  return { ...base, urgency, claimed_by: null, is_done: false, store_id: storeId }
 }
 
 Deno.serve(async (req) => {
@@ -110,8 +111,27 @@ Deno.serve(async (req) => {
     }
 
     const text = param('text') ?? param('q') ?? ''
-    const parsed = parseCommand(text, param('list'))
+
+    /*
+      The household's real store names, so "milk at Costco" can be understood
+      without guessing. Fetched up front rather than after parsing because the
+      parser needs them to decide whether a trailing "at ..." names a shop or
+      is just part of what was said — "meet Sam at noon" has to keep its words.
+    */
+    const { data: storeRows } = await db.from('stores').select('id, name')
+    const stores = (storeRows ?? []) as { id: string; name: string }[]
+
+    const parsed = parseCommand(
+      text,
+      param('list'),
+      param('store'),
+      stores.map((s) => s.name),
+    )
     if (!parsed) return json({ ok: false, error: 'nothing to add' }, 400)
+
+    const storeId = parsed.store
+      ? (stores.find((s) => s.name === parsed.store)?.id ?? null)
+      : null
 
     // Attribute to a named person when one is given, so the activity log and
     // the scoreboard stay honest about who asked for it.
@@ -128,7 +148,7 @@ Deno.serve(async (req) => {
 
     const { error } = await db
       .from(parsed.list)
-      .insert(rowFor(parsed.list, parsed.title, parsed.urgency, profileId))
+      .insert(rowFor(parsed.list, parsed.title, parsed.urgency, profileId, storeId))
 
     if (error) return json({ ok: false, error: error.message }, 500)
 
@@ -138,7 +158,10 @@ Deno.serve(async (req) => {
       ok: true,
       list: parsed.list,
       title: parsed.title,
-      spoken: `Added ${parsed.title}`,
+      store: parsed.store,
+      spoken: parsed.store
+        ? `Added ${parsed.title} to ${parsed.store}`
+        : `Added ${parsed.title}`,
     })
   } catch (err) {
     console.error(err)

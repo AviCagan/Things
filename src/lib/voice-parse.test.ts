@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { parseCommand, resolveList, URGENT_LEVEL } from '../../supabase/functions/add/parse'
+import {
+  parseCommand,
+  resolveList,
+  resolveStore,
+  URGENT_LEVEL,
+} from '../../supabase/functions/add/parse'
 import { URGENCY } from '@/data/types'
 
 /**
@@ -39,7 +44,7 @@ describe('resolveList', () => {
 describe('parseCommand', () => {
   it('takes the list hint when one is given', () => {
     const c = parseCommand('milk', 'shopping')
-    expect(c).toEqual({ list: 'shopping_items', title: 'Milk', urgency: 1 })
+    expect(c).toEqual({ list: 'shopping_items', title: 'Milk', urgency: 1, store: null })
   })
 
   it('infers the list from the sentence when there is no hint', () => {
@@ -89,5 +94,66 @@ describe('parseCommand', () => {
     parseCommand('urgent thing one', 'todos')
     expect(parseCommand('urgent thing two', 'todos')?.urgency).toBe(URGENT_LEVEL)
     expect(parseCommand('urgent thing three', 'todos')?.urgency).toBe(URGENT_LEVEL)
+  })
+})
+
+describe('resolveStore', () => {
+  const stores = ["Trader Joe's", 'Costco', 'Amazon']
+
+  it('matches case-insensitively', () => {
+    expect(resolveStore('costco', stores)).toBe('Costco')
+    expect(resolveStore('COSTCO', stores)).toBe('Costco')
+  })
+
+  it("matches when speech-to-text drops the apostrophe", () => {
+    expect(resolveStore('trader joes', stores)).toBe("Trader Joe's")
+  })
+
+  it('returns null for something that is not a store', () => {
+    expect(resolveStore('noon', stores)).toBeNull()
+    expect(resolveStore('', stores)).toBeNull()
+    expect(resolveStore(null, stores)).toBeNull()
+  })
+})
+
+describe('parseCommand: stores', () => {
+  const stores = ["Trader Joe's", 'Costco']
+
+  it('reads a store out of the sentence and picks the shopping list', () => {
+    const c = parseCommand('add milk at Costco', null, null, stores)
+    expect(c?.store).toBe('Costco')
+    expect(c?.list).toBe('shopping_items')
+    expect(c?.title).toBe('Milk')
+  })
+
+  it('takes an explicit store hint, which is how a per-store shortcut works', () => {
+    const c = parseCommand('milk', 'shopping', 'costco', stores)
+    expect(c?.store).toBe('Costco')
+    expect(c?.title).toBe('Milk')
+  })
+
+  it('handles a list and a store in either order', () => {
+    const a = parseCommand('add milk to shopping at Costco', null, null, stores)
+    expect([a?.list, a?.store, a?.title]).toEqual(['shopping_items', 'Costco', 'Milk'])
+    const b = parseCommand('add milk at Costco to shopping', null, null, stores)
+    expect([b?.list, b?.store, b?.title]).toEqual(['shopping_items', 'Costco', 'Milk'])
+  })
+
+  it('leaves the words alone when the trailing phrase is not a real store', () => {
+    // The whole reason store names are passed in rather than guessed.
+    const c = parseCommand('meet Sam at noon', 'todos', null, stores)
+    expect(c?.store).toBeNull()
+    expect(c?.title).toBe('Meet Sam at noon')
+  })
+
+  it('does not attach a store to a list that has no stores', () => {
+    const c = parseCommand('batteries at Costco', 'todos', null, stores)
+    expect(c?.store).toBeNull()
+  })
+
+  it('is unaffected when the household has no stores yet', () => {
+    const c = parseCommand('add milk at Costco', 'shopping', null, [])
+    expect(c?.store).toBeNull()
+    expect(c?.title).toBe('Milk at Costco')
   })
 })

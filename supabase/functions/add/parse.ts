@@ -9,6 +9,8 @@ export interface ParsedCommand {
   list: ListName
   title: string
   urgency: number
+  /** Canonical store name, matched against the household's real stores. */
+  store: string | null
 }
 
 /** Must track `URGENCY.URGENT` in src/data/types.ts. */
@@ -58,17 +60,69 @@ const LEAD_NOISE =
 
 const URGENT_WORDS = /\b(?:urgent|urgently|asap|right away|important)\b/gi
 
+const norm = (s: string) => s.trim().toLowerCase().replace(/[.,!?;]+$/, '')
+
+/** Case-insensitive match of a spoken phrase against the real store names. */
+export function resolveStore(
+  phrase: string | null | undefined,
+  storeNames: string[],
+): string | null {
+  if (!phrase) return null
+  const want = norm(phrase)
+  if (!want) return null
+  return (
+    storeNames.find((n) => norm(n) === want) ??
+    // "trader joes" for "Trader Joe's" — speech-to-text drops apostrophes.
+    storeNames.find((n) => norm(n).replace(/[^a-z0-9]/g, '') === want.replace(/[^a-z0-9]/g, '')) ??
+    null
+  )
+}
+
+const CONNECTOR = /\s+(?:to|at|in|on|from)\s+(?:the\s+|my\s+|our\s+)?/gi
+
+/**
+ * Every way the sentence could be split at a trailing "to/at/in ..." clause,
+ * rightmost first.
+ *
+ * A single regex anchored to the end can't do this: the phrase it captures is
+ * allowed to contain spaces, so in "milk to shopping at Costco" it swallows
+ * "shopping at Costco" as one lump, which matches neither a list nor a store
+ * and leaves the whole thing in the title. Trying the rightmost split first
+ * peels off one clause at a time.
+ */
+function trailingSplits(body: string): { head: string; phrase: string }[] {
+  const out: { head: string; phrase: string }[] = []
+  CONNECTOR.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = CONNECTOR.exec(body)) !== null) {
+    out.push({
+      head: body.slice(0, m.index),
+      phrase: body.slice(m.index + m[0].length).replace(/\s+list\s*$/i, '').trim(),
+    })
+  }
+  CONNECTOR.lastIndex = 0
+  return out.reverse()
+}
+
 /**
  * "add milk to the shopping list" → { list: shopping_items, title: "Milk" }
+ * "add milk at Costco"            → { list: shopping_items, store: "Costco" }
  *
- * `listHint` wins when supplied, which is the normal case: a Shortcut or an
- * IFTTT applet is set up once per list, so the phrase itself only has to carry
- * the item. Inferring from the sentence is the fallback for a single
- * catch-all shortcut.
+ * `listHint` and `storeHint` win when supplied, which is the normal case: a
+ * Shortcut or an IFTTT applet is set up once per list (or once per store), so
+ * the phrase itself only has to carry the item. Reading them out of the
+ * sentence is the fallback for a single catch-all shortcut.
+ *
+ * Store names have to be passed in rather than guessed: a trailing clause is
+ * only stripped when it genuinely names one of your lists or one of your
+ * stores, so "add a note to the fridge" and "meet Sam at noon" keep every
+ * word they were spoken with.
  */
 export function parseCommand(
   text: string,
   listHint?: string | null,
+  storeHint?: string | null,
+  storeNames: string[] = [],
 ): ParsedCommand | null {
   let body = (text ?? '').trim()
   if (!body) return null
@@ -76,18 +130,32 @@ export function parseCommand(
   body = body.replace(LEAD_NOISE, '').trim()
 
   let list = resolveList(listHint)
+  let store = resolveStore(storeHint, storeNames)
 
-  // "... to the shopping list" / "... to shopping". Only strip the trailing
-  // phrase when it actually names a list, so "add a note to the fridge" keeps
-  // its words.
-  if (!list) {
-    const trailing = body.match(/\s+(?:to|on|in)\s+(?:the\s+|my\s+|our\s+)?([\w -]+?)(?:\s+list)?\s*$/i)
-    const matched = trailing ? resolveList(trailing[1]) : null
-    if (matched) {
-      list = matched
-      body = body.slice(0, trailing!.index).trim()
-    }
+  /*
+    Strip up to two trailing clauses, so "milk at Costco to shopping" and
+    "milk to shopping at Costco" both work. Each pass takes the clause only if
+    it resolves to a real list or a real store; the moment one doesn't, the
+    remaining words belong to the title and we stop.
+  */
+  for (let pass = 0; pass < 2; pass++) {
+    const taken = trailingSplits(body).find(({ phrase }) => {
+      const asList = resolveList(phrase)
+      const asStore = resolveStore(phrase, storeNames)
+      return (asList && !list) || (asStore && !store)
+    })
+    if (!taken) break
+
+    const asList = resolveList(taken.phrase)
+    if (asList && !list) list = asList
+    else store = resolveStore(taken.phrase, storeNames)
+
+    body = taken.head.trim()
   }
+
+  // Naming a store only makes sense for the shopping list, and saying one is a
+  // clear enough signal to pick that list when nothing else did.
+  if (store && !list) list = 'shopping_items'
 
   let urgency = DEFAULT_URGENCY
   if (URGENT_WORDS.test(body)) {
@@ -112,5 +180,8 @@ export function parseCommand(
     list: list ?? 'todos',
     title: title.charAt(0).toUpperCase() + title.slice(1),
     urgency,
+    // A store on any list but shopping would be silently dropped on insert,
+    // so don't claim one was understood.
+    store: list === 'shopping_items' ? store : null,
   }
 }

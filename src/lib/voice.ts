@@ -36,10 +36,15 @@ export function voiceUrl(
   token: string | null,
   list?: string,
   who?: string | null,
+  store?: string | null,
 ): string {
   if (!token || !SUPABASE_URL) return ''
   const params = new URLSearchParams({ token })
   if (list) params.set('list', list)
   if (who) params.set('who', who)
+  // Pins a shortcut to one shop, so the phrase only has to carry the item.
+  // Saying "at Costco" out loud works too — the endpoint matches spoken store
+  // names against the real ones — but a per-store shortcut is fewer words.
+  if (store) params.set('store', store)
   return `${SUPABASE_URL}/functions/v1/add?${params.toString()}&text=TEXT`
 }
