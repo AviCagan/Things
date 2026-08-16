@@ -10,12 +10,22 @@ export function Sheet({
   title,
   children,
   maxHeight = '86vh',
+  height,
 }: {
   open: boolean
   onClose: () => void
   title?: ReactNode
   children: ReactNode
   maxHeight?: string
+  /**
+   * Pins the sheet to a fixed height instead of letting it size to its
+   * content. For a sheet whose content can be swapped in place — the activity
+   * feed's Summary/History tabs — sizing to content means the whole sheet
+   * jumps up or down every time you switch, because the two views are
+   * different heights. Fixing the height moves the difference into the inner
+   * scroll area, where it belongs.
+   */
+  height?: string
 }) {
   const dragControls = useDragControls()
 
@@ -60,6 +70,7 @@ export function Sheet({
               borderTop: '1px solid var(--border)',
               boxShadow: 'var(--shadow-lg)',
               maxHeight,
+              ...(height ? { height } : {}),
             }}
           >
             <div

@@ -127,8 +127,10 @@ export function ActivitySheet() {
   const nameOf = (id: string | null) =>
     profiles.find((p) => p.id === id)?.display_name ?? 'Someone'
 
+  // Fixed height: Summary and History are different lengths, so a
+  // content-sized sheet lurched up and down every time you switched tabs.
   return (
-    <Sheet open={open} onClose={closeSheet} title="Home">
+    <Sheet open={open} onClose={closeSheet} title="Home" height="80vh">
       <div
         className="mb-4 flex gap-0.5 rounded-full p-0.5"
         style={{ background: 'var(--surface-3)' }}

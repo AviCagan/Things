@@ -222,13 +222,37 @@ async function sweepCooldowns() {
 
 // --- entrypoint -------------------------------------------------------------
 
+/*
+  This function started life as a purely server-side one — Database Webhooks
+  and pg_cron call it, and neither is a browser, so it never needed CORS. Then
+  Settings gained a "Test" button that invokes it from the app, and a browser
+  POST with an Authorization header triggers a preflight OPTIONS first. With
+  nothing answering that, the request failed before it ever ran: the test came
+  back as an Edge Function error on both the APK (Capacitor is an https origin
+  and enforces CORS like any other) and the web app, while ordinary
+  notifications kept working fine because those still arrive server-to-server.
+*/
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+const reply = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  })
+
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+
   try {
     const body = await req.json().catch(() => ({}))
 
     if (body.mode === 'sweep_cooldowns') {
       const sent = await sweepCooldowns()
-      return Response.json({ ok: true, mode: 'sweep', sent })
+      return reply({ ok: true, mode: 'sweep', sent })
     }
 
     /*
@@ -241,7 +265,7 @@ Deno.serve(async (req) => {
     if (body.mode === 'test') {
       const profileId = String(body.profile_id ?? '')
       if (!profileId) {
-        return Response.json({ ok: false, error: 'profile_id required' }, { status: 400 })
+        return reply({ ok: false, error: 'profile_id required' }, 400)
       }
 
       const { data: subs } = await db
@@ -262,18 +286,18 @@ Deno.serve(async (req) => {
           sub.platform === 'fcm' ? await sendFcm(sub, push) : await sendWebPush(sub, push)
         if (ok) sent++
       }
-      return Response.json({ ok: true, mode: 'test', devices: subs?.length ?? 0, sent })
+      return reply({ ok: true, mode: 'test', devices: subs?.length ?? 0, sent })
     }
 
     const classified = classify(body as WebhookBody)
-    if (!classified) return Response.json({ ok: true, skipped: 'no-op' })
+    if (!classified) return reply({ ok: true, skipped: 'no-op' })
 
     const ids = await recipients(classified.actorId, classified.targetId)
     const result = await deliver(ids, classified.event, classified.push)
 
-    return Response.json({ ok: true, event: classified.event, ...result })
+    return reply({ ok: true, event: classified.event, ...result })
   } catch (err) {
     console.error(err)
-    return Response.json({ ok: false, error: String(err) }, { status: 500 })
+    return reply({ ok: false, error: String(err) }, 500)
   }
 })

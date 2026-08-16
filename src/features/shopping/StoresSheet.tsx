@@ -67,27 +67,48 @@ export function StoresSheet() {
     <Sheet open={sheet.kind === 'stores'} onClose={closeSheet} title="Stores">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2.5 rounded-2xl p-3.5" style={{ background: 'var(--surface-2)' }}>
-          {/* Searching by name fills the address too, so a shop only has to
-              be looked up once rather than typed here and searched again. */}
-          <AddressInput
-            value={name}
-            onChange={setName}
-            // Keep the name a name. Filling it with the full postal address is
-            // what made stores show up as "Taster's Market, 330 Bradley
-            // Avenue, New York…" in the shopping list.
-            fillWith="name"
-            onPick={(place) => {
-              setAddress(place.address)
-              setCoords({ lat: place.lat, lng: place.lng })
-            }}
-            placeholder="Store name — we'll find the address"
-          />
+          {/* Searching by name fills the address too, so a physical shop only
+              has to be looked up once rather than typed here and searched
+              again. An online store has no address at all, so it stays a plain
+              name field — no lookup, no suggestions to dismiss. */}
+          {isOnline ? (
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Store name"
+              className="rounded-xl px-3 py-2.5 text-[14px] outline-none"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            />
+          ) : (
+            <AddressInput
+              value={name}
+              onChange={setName}
+              // Keep the name a name. Filling it with the full postal address is
+              // what made stores show up as "Taster's Market, 330 Bradley
+              // Avenue, New York…" in the shopping list.
+              fillWith="name"
+              onPick={(place) => {
+                setAddress(place.address)
+                setCoords({ lat: place.lat, lng: place.lng })
+              }}
+              placeholder="Store name — we'll find the address"
+            />
+          )}
 
           <label className="flex items-center gap-2.5 px-1 py-1">
             <button
               onClick={() => {
                 fire(isOnline ? 'toggleOff' : 'toggleOn')
-                setIsOnline((v) => !v)
+                setIsOnline((v) => {
+                  // Drop anything a lookup already filled in. The insert
+                  // nulls these for an online store anyway, but leaving them
+                  // on screen suggests they'll be saved when they won't.
+                  if (!v) {
+                    setAddress('')
+                    setCoords(null)
+                  }
+                  return !v
+                })
               }}
               role="switch"
               aria-checked={isOnline}
