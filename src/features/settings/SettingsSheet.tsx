@@ -10,6 +10,7 @@ import { isIOS, isNative } from '@/lib/platform'
 import { enablePush, pushState, type PushState } from '@/lib/notifications'
 import { runPushDiagnostics, sendTestPush, type Check } from '@/lib/pushDiagnostics'
 import { newVoiceToken, voiceUrl, VOICE_LISTS } from '@/lib/voice'
+import { buildLabel } from '@/lib/build'
 import { fileToAvatarDataUrl, dataUrlBytes } from '@/lib/image'
 import { AddressInput } from '@/components/primitives/AddressInput'
 import { ColorPicker } from '@/components/primitives/ColorPicker'
@@ -102,6 +103,16 @@ export function SettingsSheet() {
   return (
     <Sheet open={sheet.kind === 'settings'} onClose={closeSheet} title="Settings">
       <div className="flex flex-col gap-7 pb-6">
+        {/* First thing in the sheet, on purpose: "is this the build I think it
+            is" needs to be answerable without scrolling, especially right
+            after installing a new APK. */}
+        <p
+          className="-mt-2 text-center text-[11px]"
+          style={{ color: 'var(--text-faint)' }}
+        >
+          Build {buildLabel()}
+        </p>
+
         <Group label={`${profile.display_name}'s look`}>
           <AvatarRow profile={profile} />
 
