@@ -43,6 +43,7 @@ export interface Row {
   claimed_by?: string | null
   created_by?: string | null
   updated_by?: string | null
+  completed_by?: string | null
   is_done?: boolean
   last_completed_by?: string | null
 }
@@ -117,7 +118,12 @@ export function classify(body: WebhookBody): Classified | null {
     if (!old_record.is_done && record.is_done) {
       return {
         event: 'claim_complete',
-        actorId: null,
+        // `completed_by` is written by toggleTodo/toggleShoppingItem and is the
+        // only thing that identifies who actually ticked it. This used to be a
+        // hardcoded null, which made `recipients()` skip its own
+        // exclude-the-actor rule — so finishing your own to-do pushed a "Done"
+        // notification straight back to your own phone.
+        actorId: record.completed_by ?? record.claimed_by ?? null,
         targetId: record.created_by ?? null,
         push: {
           title: 'Done',

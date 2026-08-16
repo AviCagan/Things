@@ -37,7 +37,8 @@ export function WishAddBar() {
 
     // Not a link: straightforward add.
     if (!isUrl(raw)) {
-      void dataActions.addWish(raw, desire, owner, {
+      void dataActions.addWish(raw, desire, profileId, {
+        owner_id: owner,
         ...(manualPrice != null ? { price_cents: manualPrice } : {}),
       })
       setValue('')
@@ -50,8 +51,9 @@ export function WishAddBar() {
     // the preview comes back — waiting on the network before the item appears
     // would make pasting feel broken.
     const id = newId()
-    void dataActions.addWish(domainOf(raw), desire, owner, {
+    void dataActions.addWish(domainOf(raw), desire, profileId, {
       id,
+      owner_id: owner,
       url: raw,
       ...(manualPrice != null ? { price_cents: manualPrice } : {}),
     })

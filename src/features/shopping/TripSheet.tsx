@@ -56,13 +56,24 @@ export function TripSheet() {
   const [progress, setProgress] = useState('')
   const [legIndex, setLegIndex] = useState(0)
 
+  /*
+    Reset only when the sheet opens.
+
+    This used to also key on `candidates.length`, which is derived from the
+    shared stores and items. So while one of you had a solved route on screen
+    and was driving it, the other ticking off the last item at a shop changed
+    that count and threw the whole plan back to the store picker — discarding
+    the geocoding and the OSRM matrix that produced it. The list of candidates
+    is captured at open; changes to it during a trip are deliberately ignored.
+  */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return
     setSelected(new Set(candidates.map((c) => c.store.id)))
     setPhase('select')
     setPlan(null)
     setLegIndex(0)
-  }, [open, candidates.length])
+  }, [open])
 
   const homeCoords: LatLng | null =
     household?.home_lat != null && household?.home_lng != null

@@ -11,7 +11,10 @@ declare t text;
 begin
   foreach t in array array[
     'todos','chores','shopping_items','stores','wishlist_items',
-    'profile_settings','household_settings','shopping_trips','activity_log'
+    -- profiles belongs here because the client subscribes to it (see TABLES in
+    -- src/data/adapter.ts). Without it, changing a name, colour or photo never
+    -- reached the other phone until it was backgrounded and reopened.
+    'profiles','profile_settings','household_settings','shopping_trips','activity_log'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -42,3 +45,4 @@ alter table wishlist_items  replica identity full;
 alter table profile_settings replica identity full;
 alter table household_settings replica identity full;
 alter table activity_log      replica identity full;
+alter table profiles          replica identity full;

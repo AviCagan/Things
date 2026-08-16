@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { toast } from 'sonner'
 import type { ChangeEvent, DataAdapter, TableMap, TableName } from '@/data/adapter'
-import { TABLES, newId, nowIso } from '@/data/adapter'
+import { TABLES, newId, nowIso, rowKey } from '@/data/adapter'
 import { createLocalAdapter, computeNextDue } from '@/data/localAdapter'
 import type {
   Chore,
@@ -43,12 +43,24 @@ interface DataState extends Collections {
   applyChange: (event: ChangeEvent) => void
 }
 
-/** Rows are keyed by `id`; settings tables use a fixed key. */
-function rowKey(table: TableName, row: unknown): string {
-  if (table === 'household_settings') return 'singleton'
-  if (table === 'profile_settings')
-    return (row as { profile_id: string }).profile_id
-  return (row as { id: string }).id
+/**
+ * Tears down the previous subscription before opening a new one.
+ *
+ * `subscribe()` returns an unsubscribe function that is the only path which
+ * removes the Supabase channel and the `visibilitychange` listener, and both
+ * call sites used to drop it. StrictMode runs the boot effect twice on every
+ * mount, and a failed boot plus "Try again" adds more — so channels stacked
+ * up, and every foreground fired N concurrent full refetches while each
+ * realtime event was applied N times.
+ */
+let unsubscribe: (() => void) | null = null
+
+function resubscribe(get: () => DataState) {
+  unsubscribe?.()
+  unsubscribe = get().adapter.subscribe(
+    (event) => get().applyChange(event),
+    () => void get().refetchAll(),
+  )
 }
 
 export const useData = create<DataState>((set, get) => ({
@@ -60,21 +72,14 @@ export const useData = create<DataState>((set, get) => ({
 
   async init() {
     await get().refetchAll()
-    const { adapter } = get()
-    adapter.subscribe(
-      (event) => get().applyChange(event),
-      () => void get().refetchAll(),
-    )
+    resubscribe(get)
     set({ ready: true })
   },
 
   async setAdapter(adapter) {
     set({ adapter, ready: false })
     await get().refetchAll()
-    adapter.subscribe(
-      (event) => get().applyChange(event),
-      () => void get().refetchAll(),
-    )
+    resubscribe(get)
     set({ ready: true, connection: adapter.kind === 'supabase' ? 'live' : 'local' })
   },
 
@@ -119,22 +124,48 @@ export const useData = create<DataState>((set, get) => ({
 // --- mutation helpers -------------------------------------------------------
 
 /**
+ * Put one row back exactly as it was, leaving every other row untouched.
+ *
+ * `undefined` means the row shouldn't be there at all — the rollback for a
+ * failed insert.
+ */
+function restoreRow<T extends TableName>(
+  table: T,
+  id: string,
+  before: TableMap[T] | undefined,
+) {
+  const rows = useData.getState()[table] as TableMap[T][]
+  const present = rows.some((r) => rowKey(table, r) === id)
+  const next = !before
+    ? rows.filter((r) => rowKey(table, r) !== id)
+    : present
+      ? rows.map((r) => (rowKey(table, r) === id ? before : r))
+      : [...rows, before]
+  useData.setState({ [table]: next } as unknown as Partial<DataState>)
+}
+
+/**
  * Optimistic write: apply locally and fire the haptic immediately, then hit the
- * network. The UI never waits on a round-trip. On failure we roll back to the
- * snapshot rather than trying to invert the patch.
+ * network. The UI never waits on a round-trip.
+ *
+ * `restore` undoes only the row this write touched. It used to take a snapshot
+ * of the whole table, which meant one failed request reverted every other
+ * change applied while it was in flight — tick two items off quickly on a
+ * flaky connection and a failure on the first silently un-ticked the second,
+ * along with any realtime rows that had landed in between.
  */
 async function optimistic<T extends TableName>(
   table: T,
   apply: () => void,
   commit: () => Promise<unknown>,
-  rollbackTo: TableMap[T][],
+  restore: () => void,
   failMessage: string,
 ) {
   apply()
   try {
     await commit()
   } catch (err) {
-    useData.setState({ [table]: rollbackTo } as unknown as Partial<DataState>)
+    restore()
     fire('error')
     toast.error(failMessage)
     console.error(`[${table}]`, err)
@@ -172,7 +203,7 @@ export const dataActions = {
       'todos',
       () => useData.setState({ todos: [...snapshot, row] }),
       () => useData.getState().adapter.insert('todos', row),
-      snapshot,
+      () => restoreRow('todos', row.id, undefined),
       "Couldn't add that",
     )
   },
@@ -217,7 +248,7 @@ export const dataActions = {
       'chores',
       () => useData.setState({ chores: [...snapshot, row] }),
       () => useData.getState().adapter.insert('chores', row),
-      snapshot,
+      () => restoreRow('chores', row.id, undefined),
       "Couldn't add that chore",
     )
   },
@@ -306,7 +337,7 @@ export const dataActions = {
       'shopping_items',
       () => useData.setState({ shopping_items: [...snapshot, row] }),
       () => useData.getState().adapter.insert('shopping_items', row),
-      snapshot,
+      () => restoreRow('shopping_items', row.id, undefined),
       "Couldn't add that",
     )
   },
@@ -334,7 +365,7 @@ export const dataActions = {
       'stores',
       () => useData.setState({ stores: [...snapshot, row] }),
       () => useData.getState().adapter.insert('stores', row),
-      snapshot,
+      () => restoreRow('stores', row.id, undefined),
       "Couldn't add that store",
     )
     return row
@@ -342,10 +373,17 @@ export const dataActions = {
 
   // --- wishlist ------------------------------------------------------------
 
+  /**
+   * `createdBy` is who is adding this, which is NOT necessarily who it's for —
+   * pass `owner_id` in `extra` to say that. The two used to share one argument,
+   * so adding a wish for your partner recorded them as its creator: the feed
+   * read "Jackie added AirPods" when Avi did, the scoreboard credited her, and
+   * the notification went to the person who had just typed it.
+   */
   async addWish(
     title: string,
     desire: Desire,
-    profileId: string | null,
+    createdBy: string | null,
     extra: Partial<WishlistItem> = {},
   ) {
     const row: WishlistItem = {
@@ -356,10 +394,10 @@ export const dataActions = {
       price_cents: null,
       image_url: null,
       desire_level: desire,
-      owner_id: profileId,
+      owner_id: createdBy,
       is_purchased: false,
       purchased_at: null,
-      created_by: profileId,
+      created_by: createdBy,
       updated_by: null,
       sort_order: Date.now(),
       created_at: nowIso(),
@@ -372,7 +410,7 @@ export const dataActions = {
       'wishlist_items',
       () => useData.setState({ wishlist_items: [...snapshot, row] }),
       () => useData.getState().adapter.insert('wishlist_items', row),
-      snapshot,
+      () => restoreRow('wishlist_items', row.id, undefined),
       "Couldn't add that",
     )
   },
@@ -391,7 +429,12 @@ export const dataActions = {
     claimantName: (id: string) => string,
   ) {
     const adapter = useData.getState().adapter
-    const snapshot = useData.getState()[table] as Array<{ id: string; claimed_by: string | null }>
+    // Only this row is restored on failure — a whole-table snapshot would also
+    // undo whatever else landed while the claim was in flight.
+    const before = (useData.getState()[table] as TableMap[typeof table][]).find(
+      (r) => rowKey(table, r) === id,
+    )
+    const undo = () => restoreRow(table, id, before)
 
     if (currentClaim === profileId) {
       fire('toggleOff')
@@ -399,7 +442,7 @@ export const dataActions = {
       try {
         await adapter.unclaim(table, id, profileId)
       } catch {
-        useData.setState({ [table]: snapshot } as unknown as Partial<DataState>)
+        undo()
       }
       return
     }
@@ -415,19 +458,20 @@ export const dataActions = {
     try {
       const result = await adapter.claim(table, id, profileId)
       if (!result.won) {
-        useData.setState({ [table]: snapshot } as unknown as Partial<DataState>)
+        undo()
         fire('warning')
         const holder = result.row?.claimed_by
         toast(holder ? `${claimantName(holder)} got there first` : 'Already claimed')
       }
     } catch {
-      useData.setState({ [table]: snapshot } as unknown as Partial<DataState>)
+      undo()
       fire('error')
     }
   },
 
   async remove(table: TableName, id: string) {
-    const snapshot = useData.getState()[table] as unknown[]
+    const rows = useData.getState()[table] as unknown[]
+    const before = rows.find((r) => rowKey(table, r) === id)
     fire('delete')
     // Don't leave a reminder scheduled for a chore that no longer exists.
     if (table === 'chores') void cancelCooldownReminder(id)
@@ -435,10 +479,10 @@ export const dataActions = {
       table,
       () =>
         useData.setState({
-          [table]: snapshot.filter((r) => rowKey(table, r) !== id),
+          [table]: rows.filter((r) => rowKey(table, r) !== id),
         } as unknown as Partial<DataState>),
       () => useData.getState().adapter.remove(table, id),
-      snapshot as never,
+      () => restoreRow(table, id, before as never),
       "Couldn't delete that",
     )
   },
@@ -460,12 +504,14 @@ async function patchRow<T extends TableName>(
   id: string,
   patch: Partial<TableMap[T]>,
 ) {
-  const snapshot = useData.getState()[table] as TableMap[T][]
+  const before = (useData.getState()[table] as TableMap[T][]).find(
+    (r) => rowKey(table, r) === id,
+  )
   await optimistic(
     table,
     () => applyLocal(table, id, { ...patch, updated_at: nowIso() }),
     () => useData.getState().adapter.update(table, id, patch),
-    snapshot,
+    () => restoreRow(table, id, before),
     "Couldn't save that",
   )
 }

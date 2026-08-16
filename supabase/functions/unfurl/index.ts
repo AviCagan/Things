@@ -95,6 +95,73 @@ function absolute(url: string | null, base: string): string | null {
   }
 }
 
+/*
+  This function is deployed with --no-verify-jwt, so anyone who learns its URL
+  can ask it to fetch anything. Without a check it will happily retrieve
+  http://169.254.169.254/ or any host on the platform's internal network and
+  hand back the parsed contents — an unauthenticated SSRF probe wearing a link
+  preview as a disguise.
+
+  Cheap and effective: refuse anything that isn't a public hostname, and follow
+  redirects by hand so a public URL can't bounce to a private one on hop two.
+*/
+const BLOCKED_HOST =
+  /^(?:localhost|.*\.local|.*\.internal|metadata\.google\.internal)$/i
+
+function isPrivateAddress(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '')
+  if (BLOCKED_HOST.test(h)) return true
+  // IPv6 loopback, link-local and unique-local.
+  if (h === '::1' || h.startsWith('fe80:') || /^f[cd][0-9a-f]{2}:/.test(h)) return true
+
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (!v4) {
+    // A name with no dot can only be an internal short host.
+    return !h.includes('.')
+  }
+  const [a, b] = v4.slice(1).map(Number)
+  if ([a, b].some((n) => Number.isNaN(n) || n > 255)) return true
+  return (
+    a === 0 || a === 10 || a === 127 ||
+    (a === 169 && b === 254) ||          // link-local, incl. cloud metadata
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127) || // carrier-grade NAT
+    a >= 224                              // multicast and reserved
+  )
+}
+
+/** Follows redirects manually so every hop is re-checked, not just the first. */
+async function safeFetch(target: string, signal: AbortSignal): Promise<Response> {
+  let current = target
+  for (let hop = 0; hop < 5; hop++) {
+    const parsed = new URL(current)
+    if (isPrivateAddress(parsed.hostname)) {
+      throw new Error('refusing to fetch a non-public address')
+    }
+
+    const res = await fetch(current, {
+      signal,
+      redirect: 'manual',
+      headers: {
+        // Plain fetch gets bot-blocked by most shops.
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    })
+
+    const location = res.headers.get('location')
+    if (res.status >= 300 && res.status < 400 && location) {
+      current = new URL(location, current).toString()
+      continue
+    }
+    return res
+  }
+  throw new Error('too many redirects')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
 
@@ -107,17 +174,9 @@ Deno.serve(async (req) => {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
-    const res = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        // Plain fetch gets bot-blocked by most shops.
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    }).finally(() => clearTimeout(timer))
+    const res = await safeFetch(url, controller.signal).finally(() =>
+      clearTimeout(timer),
+    )
 
     if (!res.ok) {
       return Response.json({ error: `Site returned ${res.status}` }, { status: 200, headers: CORS })

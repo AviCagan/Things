@@ -66,6 +66,12 @@ function scalePattern(
 
 let intensity: HapticIntensity = 'normal'
 let perEvent: Partial<Record<HapticEventName, boolean>> = {}
+/**
+ * Whether the iOS switch trick is allowed. It is undocumented behaviour Apple
+ * has already changed once, so it stays a setting rather than something the
+ * app decides unilaterally from feature detection.
+ */
+let iosSwitchAllowed = true
 /** Visual fallback sink, wired up by the feedback layer on iOS. */
 let pulseSink: ((event: HapticEventName) => void) | null = null
 let soundSink: ((event: HapticEventName) => void) | null = null
@@ -73,9 +79,16 @@ let soundSink: ((event: HapticEventName) => void) | null = null
 export function configureHaptics(next: {
   intensity: HapticIntensity
   perEvent: Partial<Record<HapticEventName, boolean>>
+  iosSwitch?: boolean
 }) {
   intensity = next.intensity
   perEvent = next.perEvent ?? {}
+  if (next.iosSwitch !== undefined && next.iosSwitch !== iosSwitchAllowed) {
+    iosSwitchAllowed = next.iosSwitch
+    // The backend is memoised on first use, so a change here has to invalidate
+    // it or the toggle appears to do nothing until the next launch.
+    backend = null
+  }
 }
 
 export function setFeedbackSinks(opts: {
@@ -100,7 +113,9 @@ function resolveBackend(): Backend {
     backend = 'vibrate'
   // iOS has never shipped the Vibration API, but Safari 17.4's switch control
   // plays a real system haptic when it toggles — see fireIosSwitch below.
-  else if (iosSwitchSupported()) backend = 'ios-switch'
+  // Gated on the setting: this is an undocumented trick, not an API, so
+  // someone has to be able to turn it off.
+  else if (iosSwitchAllowed && iosSwitchSupported()) backend = 'ios-switch'
   else backend = 'none'
   return backend
 }

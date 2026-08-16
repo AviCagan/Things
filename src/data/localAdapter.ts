@@ -1,6 +1,6 @@
 import { get, set } from 'idb-keyval'
 import type { ChangeHandler, DataAdapter, TableMap, TableName } from './adapter'
-import { TABLES, nowIso } from './adapter'
+import { TABLES, nowIso, rowKey } from './adapter'
 import { activityRow, deriveActivity, isActivityTable } from './activity'
 import type { Chore, Weekday } from './types'
 
@@ -85,10 +85,16 @@ export function createLocalAdapter(): DataAdapter {
 
     async update(table, id, patch) {
       const db = await load()
-      const rows = db[table] as Array<{ id?: string; singleton?: boolean }>
-      const idx = rows.findIndex((r) => (r.id ?? String(r.singleton)) === id)
+      const rows = db[table] as unknown[]
+      // Was `(r.id ?? String(r.singleton)) === id`, which matched neither of
+      // the two tables that aren't keyed on `id`: profile_settings rows have
+      // no `id` and no `singleton`, so it compared the string "undefined", and
+      // household_settings compared "true" against the key "singleton". Both
+      // returned -1, `update` returned null instead of throwing, and every
+      // settings change in local mode was silently dropped on reload.
+      const idx = rows.findIndex((r) => rowKey(table, r) === id)
       if (idx < 0) return null
-      const before = rows[idx]
+      const before = rows[idx] as Record<string, unknown>
       const next = { ...before, ...patch, updated_at: nowIso() }
       rows[idx] = next as never
       logActivity(db, table, 'update', before as never, next as never)

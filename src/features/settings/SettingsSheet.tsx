@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Sheet } from '@/components/primitives/Sheet'
 import { Icon } from '@/components/primitives/Icon'
 import { useData, dataActions } from '@/store/useData'
@@ -70,6 +70,25 @@ export function SettingsSheet() {
 
   const [home, setHome] = useState(household?.home_address ?? '')
   const [homeCoords, setHomeCoords] = useState<{ lat: number; lng: number } | null>(null)
+
+  /*
+    Re-seed when the shared row changes underneath us.
+
+    This sheet is mounted for the whole session (App.tsx), so useState's
+    initialiser ran once at boot and never again. If the other phone changed
+    the home address, this field still held the old string — and because Save
+    writes `home_address` and both coordinates unconditionally, opening
+    Settings for any unrelated reason and tapping Save silently reverted their
+    edit and nulled the coordinates for both of you.
+
+    Keyed on the stored value rather than the object: the row's identity
+    changes on every realtime echo, which would stomp on what you're typing.
+  */
+  const storedHome = household?.home_address ?? ''
+  useEffect(() => {
+    setHome(storedHome)
+    setHomeCoords(null)
+  }, [storedHome])
   const [showHaptics, setShowHaptics] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
   const [accentWheel, setAccentWheel] = useState(false)
@@ -195,8 +214,8 @@ export function SettingsSheet() {
 
           {isIOS() && !isNative() && (
             <Toggle
-              label="Native iOS switch"
-              hint="Experimental: uses Apple's switch control on the checkbox, which can produce a real haptic on iOS 17.4+. Apple may remove this at any time."
+              label="iOS haptics"
+              hint="iPhones have no vibration API, so this borrows Apple's switch control to produce a real haptic. Works on iOS 17.4 and later; Apple changed it in 26.5, where it may do nothing. Turn off if it feels wrong."
               value={settings.ios_native_switch}
               onChange={(v) => set({ ios_native_switch: v })}
             />

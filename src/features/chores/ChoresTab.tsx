@@ -38,7 +38,12 @@ export function ChoresTab() {
       resting: sorted
         .filter((c) => isResting(c, now))
         .sort((a, b) => (a.next_due_at ?? '').localeCompare(b.next_due_at ?? '')),
-      done: sorted.filter((c) => c.is_done && !c.is_recurring),
+      // `!isResting` rather than `!is_recurring`: a chore that is both done and
+      // recurring but has no cooldown running yet — which is exactly what
+      // turning "Repeats" on for a finished chore produces — matched none of
+      // the three buckets and vanished from the tab with no way to reopen,
+      // un-complete or delete it.
+      done: sorted.filter((c) => c.is_done && !isResting(c, now)),
     }
   }, [chores, now, sortBy, desc])
 

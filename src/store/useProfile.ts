@@ -47,7 +47,9 @@ export const defaultSettings = (
   haptic_events: {},
   sound_enabled: false,
   reduce_motion: false,
-  ios_native_switch: false,
+  // On by default: this is the only way an iPhone gets any haptic at all,
+  // and it degrades to nothing on builds where Apple has closed it off.
+  ios_native_switch: true,
   // Jackie navigates with Waze, Avi with Google Maps — changeable in Settings.
   nav_app: slug === 'avi' ? 'google' : 'waze',
   notify_events: {},
@@ -109,8 +111,29 @@ export const useProfile = create<ProfileState>((set) => ({
   },
 }))
 
-/** Ensure both profiles and their settings rows exist (local-mode seeding). */
-export async function ensureSeeded(): Promise<void> {
+/**
+ * Ensure both profiles and their settings rows exist (local-mode seeding).
+ *
+ * Guarded against overlapping runs. StrictMode invokes the boot effect twice
+ * on every mount, and tapping "Try again" on the boot-error screen adds more;
+ * because this reads the collections once up front and then awaits per insert,
+ * two runs both saw an empty list and both inserted. On Supabase the second
+ * hit a duplicate-key error that isn't transient, so the retry wrapper gave up
+ * and the app showed "Couldn't load your lists"; on the local adapter, which
+ * pushes unconditionally, it produced four profile tiles.
+ */
+let seeding: Promise<void> | null = null
+
+export function ensureSeeded(): Promise<void> {
+  seeding ??= seedOnce().finally(() => {
+    seeding = null
+  })
+  return seeding
+}
+
+async function seedOnce(): Promise<void> {
+  // Read fresh rather than from a snapshot taken before any await.
+  await useData.getState().refetchAll()
   const { profiles, profile_settings, adapter } = useData.getState()
 
   for (const p of SEED_PROFILES) {
@@ -202,6 +225,7 @@ export function applySettings(settings: ProfileSettings | null): void {
   configureHaptics({
     intensity: settings.haptic_intensity,
     perEvent: settings.haptic_events,
+    iosSwitch: settings.ios_native_switch,
   })
   setSoundEnabled(settings.sound_enabled)
 }

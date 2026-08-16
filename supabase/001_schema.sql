@@ -36,7 +36,7 @@ create table if not exists profile_settings (
   haptic_events     jsonb not null default '{}'::jsonb,
   sound_enabled     boolean not null default false,
   reduce_motion     boolean not null default false,
-  ios_native_switch boolean not null default false,
+  ios_native_switch boolean not null default true,
   nav_app           text not null default 'google'
                       check (nav_app in ('google','waze','apple')),
   notify_events     jsonb not null default '{}'::jsonb,

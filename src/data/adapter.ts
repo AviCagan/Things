@@ -96,6 +96,18 @@ export interface DataAdapter {
   subscribe(onChange: ChangeHandler, onResync: () => void): () => void
 }
 
+/**
+ * The key a row is addressed by. Two tables are not keyed on `id`, and getting
+ * this wrong is silent: a lookup that never matches just reports "no such row"
+ * rather than throwing, so writes appear to succeed and vanish. Defined once
+ * here so the store and every adapter agree.
+ */
+export function rowKey(table: TableName, row: unknown): string {
+  if (table === 'household_settings') return 'singleton'
+  if (table === 'profile_settings') return (row as { profile_id: string }).profile_id
+  return (row as { id: string }).id
+}
+
 /** Client-side IDs so an optimistic row and its realtime echo share identity. */
 export const newId = (): string => crypto.randomUUID()
 

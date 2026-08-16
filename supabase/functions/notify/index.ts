@@ -182,9 +182,32 @@ async function sweepCooldowns() {
     .lte('next_due_at', new Date().toISOString())
     .is('cooldown_notified_at', null)
 
+  // Hoisted: this returned the same two ids on every iteration, so a sweep of
+  // twenty chores made twenty identical round-trips before sending anything.
+  const ids = await recipients(null, null)
+
   let total = 0
   for (const chore of due ?? []) {
-    const ids = await recipients(null, null)
+    /*
+      Claim the chore BEFORE delivering, not after.
+
+      The guard used to be written once the pushes had completed, which meant
+      the `is('cooldown_notified_at', null)` filter above still matched while a
+      slow run was mid-flight. The cron fires every five minutes, so an
+      overlapping run re-selected the same chores and sent every "Ready again"
+      twice — the exact outcome this column exists to prevent. The conditional
+      update makes the claim atomic: whoever flips it from null wins, and a
+      second runner gets zero rows back and skips.
+    */
+    const { data: claimed } = await db
+      .from('chores')
+      .update({ cooldown_notified_at: new Date().toISOString() })
+      .eq('id', chore.id)
+      .is('cooldown_notified_at', null)
+      .select('id')
+
+    if (!claimed || claimed.length === 0) continue
+
     const { sent } = await deliver(ids, 'cooldown_ready', {
       title: 'Ready again',
       body: chore.title,
@@ -193,10 +216,6 @@ async function sweepCooldowns() {
       tag: `cooldown-${chore.id}`,
     })
     total += sent
-    await db
-      .from('chores')
-      .update({ cooldown_notified_at: new Date().toISOString() })
-      .eq('id', chore.id)
   }
   return total
 }

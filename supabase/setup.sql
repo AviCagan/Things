@@ -1,7 +1,7 @@
 -- Things — complete database setup, in one paste.
 --
 -- Copy this whole file into the Supabase SQL Editor and hit Run, once.
--- It is the same content as 001-004 and 006-012 run in order; those are
+-- It is the same content as 001-004 and 006-013 run in order; those are
 -- kept separate for readability, this is here so setup — and catching a
 -- database up after a feature update — is a single step.
 --
@@ -56,7 +56,7 @@ create table if not exists profile_settings (
   haptic_events     jsonb not null default '{}'::jsonb,
   sound_enabled     boolean not null default false,
   reduce_motion     boolean not null default false,
-  ios_native_switch boolean not null default false,
+  ios_native_switch boolean not null default true,
   nav_app           text not null default 'google'
                       check (nav_app in ('google','waze','apple')),
   notify_events     jsonb not null default '{}'::jsonb,
@@ -527,7 +527,7 @@ create index if not exists push_profile_idx    on push_subscriptions (profile_id
 
 
 -- ==========================================================================
--- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql, 010_fix_push_upsert.sql, 011_activity_and_edits.sql, 012_voice_token.sql
+-- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql, 010_fix_push_upsert.sql, 011_activity_and_edits.sql, 012_voice_token.sql, 013_ios_haptics.sql
 -- ==========================================================================
 
 -- Things — profile photos
@@ -933,6 +933,28 @@ alter table activity_log replica identity full;
 alter table household_settings add column if not exists voice_token text;
 
 
+-- Things — iOS haptics on by default
+--
+-- Run once in the SQL Editor if your database predates this. Safe to run more
+-- than once.
+
+-- ---------------------------------------------------------------------------
+-- `ios_native_switch` now means "use Apple's switch control to produce a real
+-- haptic", which is the only way an iPhone gets any haptic feedback at all —
+-- iOS has never shipped the Vibration API. It previously described a narrower
+-- idea (render the completion checkbox as a native switch) that was never
+-- actually implemented: nothing outside the Settings toggle ever read the
+-- column, so no stored value carries a real preference.
+--
+-- That is what makes the backfill safe rather than presumptuous. Changing the
+-- column default alone would only affect brand new rows, so the two profiles
+-- that already exist would keep the dead `false` and the feature would never
+-- reach the phone it was built for.
+-- ---------------------------------------------------------------------------
+alter table profile_settings alter column ios_native_switch set default true;
+update profile_settings set ios_native_switch = true where ios_native_switch = false;
+
+
 -- ==========================================================================
 -- 002_rls.sql
 -- ==========================================================================
@@ -991,7 +1013,10 @@ declare t text;
 begin
   foreach t in array array[
     'todos','chores','shopping_items','stores','wishlist_items',
-    'profile_settings','household_settings','shopping_trips','activity_log'
+    -- profiles belongs here because the client subscribes to it (see TABLES in
+    -- src/data/adapter.ts). Without it, changing a name, colour or photo never
+    -- reached the other phone until it was backgrounded and reopened.
+    'profiles','profile_settings','household_settings','shopping_trips','activity_log'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -1022,6 +1047,7 @@ alter table wishlist_items  replica identity full;
 alter table profile_settings replica identity full;
 alter table household_settings replica identity full;
 alter table activity_log      replica identity full;
+alter table profiles          replica identity full;
 
 
 -- ==========================================================================
