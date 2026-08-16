@@ -84,6 +84,10 @@ create table if not exists todos (
   created_by   uuid references profiles(id) on delete set null,
   completed_by uuid references profiles(id) on delete set null,
   completed_at timestamptz,
+  -- When this is actually due. Null = no deadline, which stays the normal case.
+  -- Unlike chores' next_due_at, nothing derives or recomputes this: it is a
+  -- date a person chose.
+  due_at       timestamptz,
   -- Set only by the edit sheet, so an edit can notify the other person and
   -- the activity log can attribute it. created_by/claimed_by already mean
   -- something more specific, so this stays separate rather than overloaded.

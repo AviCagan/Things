@@ -11,6 +11,13 @@ export interface ParsedCommand {
   urgency: number
   /** Canonical store name, matched against the household's real stores. */
   store: string | null
+  /**
+   * A store name that was clearly meant but matched nothing we have — so the
+   * caller can ask which one instead of filing the item under nothing. Only
+   * ever set for the shopping list, where a trailing "at ..." is a shop rather
+   * than part of what was said.
+   */
+  storeSpoken: string | null
 }
 
 /** Must track `URGENCY.URGENT` in src/data/types.ts. */
@@ -157,6 +164,22 @@ export function parseCommand(
   // clear enough signal to pick that list when nothing else did.
   if (store && !list) list = 'shopping_items'
 
+  /*
+    On the shopping list only, a trailing "at ..." that matched nothing is
+    still almost certainly a shop — someone saying "milk at Costco" before
+    Costco exists, or speech-to-text mangling the name. Strip it and report it
+    so the caller can ask which store was meant. Leaving it in would file the
+    item as "Milk at Costco" with no store, which is the worst of both.
+  */
+  let storeSpoken: string | null = null
+  if (list === 'shopping_items' && !store) {
+    const candidate = body.match(/\s+(?:at|from|to)\s+(?:the\s+)?([\w' -]+?)\s*$/i)
+    if (candidate) {
+      storeSpoken = candidate[1].trim()
+      body = body.slice(0, candidate.index).trim()
+    }
+  }
+
   let urgency = DEFAULT_URGENCY
   if (URGENT_WORDS.test(body)) {
     urgency = URGENT_LEVEL
@@ -183,5 +206,6 @@ export function parseCommand(
     // A store on any list but shopping would be silently dropped on insert,
     // so don't claim one was understood.
     store: list === 'shopping_items' ? store : null,
+    storeSpoken,
   }
 }

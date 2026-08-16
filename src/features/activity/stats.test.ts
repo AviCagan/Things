@@ -18,6 +18,7 @@ const todo = (patch: Partial<Todo> = {}): Todo => ({
   is_done: false,
   completed_by: null,
   completed_at: null,
+  due_at: null,
   ...patch,
 })
 

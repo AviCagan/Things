@@ -7,6 +7,7 @@ import { useData, dataActions } from '@/store/useData'
 import { useProfile } from '@/store/useProfile'
 import { useUI } from '@/store/useUI'
 import { SortBar, compareBy } from '@/components/shell/SortBar'
+import { formatDeadline, isOverdue } from '@/lib/deadline'
 
 export function TodosTab() {
   const todos = useData((s) => s.todos)
@@ -64,6 +65,24 @@ export function TodosTab() {
                   urgency={todo.urgency}
                   claimedBy={todo.claimed_by}
                   profiles={profiles}
+                  meta={
+                    todo.due_at ? (
+                      <span
+                        className="flex items-center gap-1"
+                        style={{
+                          // Only a missed deadline gets the alarm colour;
+                          // everything else stays quiet so the list doesn't
+                          // read as a wall of warnings.
+                          color: isOverdue(todo.due_at)
+                            ? 'var(--danger)'
+                            : 'var(--text-dim)',
+                        }}
+                      >
+                        <Icon name="clock" size={11} strokeWidth={2.4} />
+                        {formatDeadline(todo.due_at)}
+                      </span>
+                    ) : undefined
+                  }
                   onComplete={() => dataActions.toggleTodo(todo, profileId)}
                   onClaim={() =>
                     profileId &&

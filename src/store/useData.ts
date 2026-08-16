@@ -187,7 +187,12 @@ function baseFields(profileId: string | null) {
 export const dataActions = {
   // --- todos ---------------------------------------------------------------
 
-  async addTodo(title: string, urgency: Urgency, profileId: string | null) {
+  async addTodo(
+    title: string,
+    urgency: Urgency,
+    profileId: string | null,
+    dueAt: string | null = null,
+  ) {
     const row: Todo = {
       ...baseFields(profileId),
       title: title.trim(),
@@ -196,6 +201,7 @@ export const dataActions = {
       is_done: false,
       completed_by: null,
       completed_at: null,
+      due_at: dueAt,
     }
     const snapshot = useData.getState().todos
     fire('tap')
@@ -206,6 +212,8 @@ export const dataActions = {
       () => restoreRow('todos', row.id, undefined),
       "Couldn't add that",
     )
+    // Returned so the caller can offer a deadline for the thing just added.
+    return row.id
   },
 
   async toggleTodo(todo: Todo, profileId: string | null) {

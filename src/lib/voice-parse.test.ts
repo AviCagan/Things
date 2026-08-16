@@ -44,7 +44,13 @@ describe('resolveList', () => {
 describe('parseCommand', () => {
   it('takes the list hint when one is given', () => {
     const c = parseCommand('milk', 'shopping')
-    expect(c).toEqual({ list: 'shopping_items', title: 'Milk', urgency: 1, store: null })
+    expect(c).toEqual({
+      list: 'shopping_items',
+      title: 'Milk',
+      urgency: 1,
+      store: null,
+      storeSpoken: null,
+    })
   })
 
   it('infers the list from the sentence when there is no hint', () => {
@@ -151,9 +157,25 @@ describe('parseCommand: stores', () => {
     expect(c?.store).toBeNull()
   })
 
-  it('is unaffected when the household has no stores yet', () => {
+  it('reports an unknown store rather than burying it in the title', () => {
+    // Nothing matches, but on the shopping list "at Costco" is plainly a shop.
+    // Keeping it in the title would file the item as "Milk at Costco" with no
+    // store — the worst of both. The caller asks which store was meant.
     const c = parseCommand('add milk at Costco', 'shopping', null, [])
     expect(c?.store).toBeNull()
-    expect(c?.title).toBe('Milk at Costco')
+    expect(c?.storeSpoken).toBe('Costco')
+    expect(c?.title).toBe('Milk')
+  })
+
+  it('does not treat a trailing phrase on other lists as a store', () => {
+    const c = parseCommand('meet Sam at noon', 'todos', null, stores)
+    expect(c?.storeSpoken).toBeNull()
+    expect(c?.title).toBe('Meet Sam at noon')
+  })
+
+  it('leaves storeSpoken empty once the store actually resolves', () => {
+    const c = parseCommand('add milk at Costco', 'shopping', null, stores)
+    expect(c?.store).toBe('Costco')
+    expect(c?.storeSpoken).toBeNull()
   })
 })

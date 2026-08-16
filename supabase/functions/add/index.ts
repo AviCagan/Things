@@ -19,6 +19,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { parseCommand, type ListName } from './parse.ts'
+import { parseWhen, parseRecurrence } from './when.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -46,6 +47,8 @@ function rowFor(
   urgency: number,
   profileId: string | null,
   storeId: string | null,
+  dueAt: string | null,
+  repeat: ReturnType<typeof parseRecurrence>,
 ): Record<string, unknown> {
   const now = new Date().toISOString()
   const base = {
@@ -67,9 +70,22 @@ function rowFor(
     return { ...base, desire_level: 3, owner_id: profileId }
   }
   if (list === 'chores') {
-    // Added by voice means a one-off. Setting up a recurrence is a decision
-    // with a schedule attached, which is not something to infer from a phrase.
-    return { ...base, urgency, claimed_by: null, is_recurring: false, is_done: false }
+    // A schedule is only ever set when one was actually said. The shapes here
+    // are pinned by the recurrence_complete constraint: weekday mode carries
+    // days and no count, every other mode carries a count and no days.
+    return {
+      ...base,
+      urgency,
+      claimed_by: null,
+      is_done: false,
+      is_recurring: repeat !== null,
+      recurrence_count: repeat && repeat.unit !== 'weekdays' ? repeat.count : null,
+      recurrence_unit: repeat?.unit ?? null,
+      recurrence_days: repeat && repeat.unit === 'weekdays' ? repeat.days : null,
+    }
+  }
+  if (list === 'todos') {
+    return { ...base, urgency, claimed_by: null, is_done: false, due_at: dueAt }
   }
   return { ...base, urgency, claimed_by: null, is_done: false, store_id: storeId }
 }
@@ -118,8 +134,8 @@ Deno.serve(async (req) => {
       parser needs them to decide whether a trailing "at ..." names a shop or
       is just part of what was said — "meet Sam at noon" has to keep its words.
     */
-    const { data: storeRows } = await db.from('stores').select('id, name')
-    const stores = (storeRows ?? []) as { id: string; name: string }[]
+    const { data: storeRows } = await db.from('stores').select('id, name, is_online')
+    const stores = (storeRows ?? []) as { id: string; name: string; is_online: boolean }[]
 
     const parsed = parseCommand(
       text,
@@ -132,6 +148,38 @@ Deno.serve(async (req) => {
     const storeId = parsed.store
       ? (stores.find((s) => s.name === parsed.store)?.id ?? null)
       : null
+
+    /*
+      A store was named but isn't one of ours.
+
+      Nothing is written in this case. The shortcut is expected to offer the
+      returned list plus a "none of these" choice and call back with an
+      explicit `store`, so the item lands where it was meant to rather than
+      silently unsorted under a misheard name. `stores` is read fresh on every
+      request, so a shop added since the shortcut was built shows up without
+      the shortcut being touched.
+    */
+    if (parsed.list === 'shopping_items') {
+      const named = param('store') ?? parsed.storeSpoken
+      if (named && !parsed.store) {
+        const options = stores.filter((st) => !st.is_online).map((st) => st.name)
+        return json({
+          ok: false,
+          needs: 'store',
+          heard: named,
+          title: parsed.title,
+          stores: options,
+          spoken: options.length
+            ? `${named} isn't a store yet. Did you mean ${options.join(', ')}?`
+            : `${named} isn't a store yet, and there are none set up. Open Things to add one.`,
+        })
+      }
+    }
+
+    const dueAt =
+      parsed.list === 'todos' ? parseWhen(param('due') ?? param('when') ?? '') : null
+    const repeat =
+      parsed.list === 'chores' ? parseRecurrence(param('every') ?? param('repeat') ?? '') : null
 
     // Attribute to a named person when one is given, so the activity log and
     // the scoreboard stay honest about who asked for it.
@@ -148,7 +196,9 @@ Deno.serve(async (req) => {
 
     const { error } = await db
       .from(parsed.list)
-      .insert(rowFor(parsed.list, parsed.title, parsed.urgency, profileId, storeId))
+      .insert(
+        rowFor(parsed.list, parsed.title, parsed.urgency, profileId, storeId, dueAt, repeat),
+      )
 
     if (error) return json({ ok: false, error: error.message }, 500)
 
@@ -159,6 +209,7 @@ Deno.serve(async (req) => {
       list: parsed.list,
       title: parsed.title,
       store: parsed.store,
+      due_at: dueAt,
       spoken: parsed.store
         ? `Added ${parsed.title} to ${parsed.store}`
         : `Added ${parsed.title}`,

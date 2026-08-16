@@ -1,7 +1,7 @@
 -- Things — complete database setup, in one paste.
 --
 -- Copy this whole file into the Supabase SQL Editor and hit Run, once.
--- It is the same content as 001-004 and 006-013 run in order; those are
+-- It is the same content as 001-004 and 006-014 run in order; those are
 -- kept separate for readability, this is here so setup — and catching a
 -- database up after a feature update — is a single step.
 --
@@ -104,6 +104,10 @@ create table if not exists todos (
   created_by   uuid references profiles(id) on delete set null,
   completed_by uuid references profiles(id) on delete set null,
   completed_at timestamptz,
+  -- When this is actually due. Null = no deadline, which stays the normal case.
+  -- Unlike chores' next_due_at, nothing derives or recomputes this: it is a
+  -- date a person chose.
+  due_at       timestamptz,
   -- Set only by the edit sheet, so an edit can notify the other person and
   -- the activity log can attribute it. created_by/claimed_by already mean
   -- something more specific, so this stays separate rather than overloaded.
@@ -527,7 +531,7 @@ create index if not exists push_profile_idx    on push_subscriptions (profile_id
 
 
 -- ==========================================================================
--- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql, 010_fix_push_upsert.sql, 011_activity_and_edits.sql, 012_voice_token.sql, 013_ios_haptics.sql
+-- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql, 010_fix_push_upsert.sql, 011_activity_and_edits.sql, 012_voice_token.sql, 013_ios_haptics.sql, 014_todo_deadlines.sql
 -- ==========================================================================
 
 -- Things — profile photos
@@ -953,6 +957,27 @@ alter table household_settings add column if not exists voice_token text;
 -- ---------------------------------------------------------------------------
 alter table profile_settings alter column ios_native_switch set default true;
 update profile_settings set ios_native_switch = true where ios_native_switch = false;
+
+
+-- Things — deadlines on to-dos
+--
+-- Run once in the SQL Editor if your database predates this. Safe to run more
+-- than once.
+
+-- ---------------------------------------------------------------------------
+-- When a to-do is actually due. Null means no deadline, which stays the normal
+-- case — most things on the list are "sometime", and forcing a date on them
+-- would make the list read as a wall of obligations.
+--
+-- Deliberately NOT reusing the chores machinery: next_due_at there is derived
+-- by a trigger from a recurrence rule and is not something a person sets. This
+-- is the opposite — a date someone chose, that nothing recomputes.
+-- ---------------------------------------------------------------------------
+alter table todos add column if not exists due_at timestamptz;
+
+-- Sorting and "what's overdue" both scan this, and only rows that have one
+-- matter, so the index skips the majority that don't.
+create index if not exists todos_due_idx on todos (due_at) where due_at is not null;
 
 
 -- ==========================================================================

@@ -164,6 +164,11 @@ export interface Todo extends ListItemBase {
   is_done: boolean
   completed_by: string | null
   completed_at: string | null
+  /**
+   * When this is due. Null means no deadline, which is the normal case.
+   * Distinct from a chore's next_due_at: nothing derives this, someone chose it.
+   */
+  due_at: string | null
 }
 
 export interface Chore extends ListItemBase {

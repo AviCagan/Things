@@ -16,6 +16,7 @@ import { WishAddBar } from './features/wishlist/WishAddBar'
 import { SettingsSheet } from './features/settings/SettingsSheet'
 import { ItemEditSheet } from './features/items/ItemEditSheet'
 import { ActivityBell, ActivitySheet } from './features/activity/ActivityBell'
+import { DeadlinePromptHost } from './features/todos/DeadlinePrompt'
 import { PinGate } from './components/shell/PinGate'
 import { Tour, tourSeen } from './components/shell/Tour'
 import { useData, dataActions } from './store/useData'
@@ -62,6 +63,11 @@ export default function App() {
   const tab = useUI((s) => s.tab)
   const openSheet = useUI((s) => s.openSheet)
   const [boot, setBoot] = useState<Boot>('loading')
+  // The to-do just added, awaiting an optional deadline. Ignoring the prompt
+  // is a valid answer, so this clears itself rather than blocking anything.
+  const [pendingDeadline, setPendingDeadline] = useState<{ id: string; title: string } | null>(
+    null,
+  )
   const [bootError, setBootError] = useState<string | null>(null)
 
   async function start() {
@@ -244,10 +250,19 @@ export default function App() {
       {/* Sits clear of the dock: 6px padding + 54px slot + 6px + 10px margin. */}
       <div className="pointer-events-none fixed inset-x-0 z-50 safe-bottom" style={{ bottom: 86 }}>
         {tab === 'todos' && (
-          <QuickAdd
-            placeholder="Add a to-do…"
-            onSubmit={(title, urgency) => dataActions.addTodo(title, urgency, profileId)}
-          />
+          <>
+            <DeadlinePromptHost
+              pending={pendingDeadline}
+              onDone={() => setPendingDeadline(null)}
+            />
+            <QuickAdd
+              placeholder="Add a to-do…"
+              onSubmit={async (title, urgency) => {
+                const id = await dataActions.addTodo(title, urgency, profileId)
+                if (id) setPendingDeadline({ id, title })
+              }}
+            />
+          </>
         )}
         {tab === 'chores' && <ChoreAddBar />}
         {tab === 'shopping' && <ShoppingAddBar />}

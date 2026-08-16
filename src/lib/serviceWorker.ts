@@ -64,6 +64,13 @@ export function setupServiceWorker(): void {
     return
   }
 
+  // The build only emits sw.js for real builds (devOptions.enabled is false),
+  // so registering during `npm run dev` just 404s and logs a MIME-type error
+  // on every reload. The plugin's own injected script never had this problem
+  // because it only ever existed in built output; registering from app code
+  // means opting out of dev explicitly.
+  if (import.meta.env.DEV) return
+
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register(swUrl, { scope: import.meta.env.BASE_URL })

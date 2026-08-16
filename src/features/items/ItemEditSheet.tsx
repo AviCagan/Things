@@ -10,6 +10,7 @@ import { fire } from '@/lib/haptics'
 import { RECURRENCE_PRESETS, deriveRecurrenceUI, describeRecurrence } from '@/lib/time'
 import { RecurrenceFields, type RecurrenceMode } from '@/features/chores/RecurrenceFields'
 import { parsePrice, priceToInput } from '@/lib/money'
+import { toDateInput, fromDateInput } from '@/lib/deadline'
 import { unfurl, isUrl } from '@/lib/unfurl'
 import { toast } from 'sonner'
 import {
@@ -78,6 +79,7 @@ export function ItemEditSheet() {
   const [price, setPrice] = useState('')
   const [desire, setDesire] = useState<Desire>(3)
   const [ownerId, setOwnerId] = useState<string | null>(null)
+  const [due, setDue] = useState('')
   const [loadingPreview, setLoadingPreview] = useState(false)
 
   const [recurring, setRecurring] = useState(false)
@@ -106,6 +108,7 @@ export function ItemEditSheet() {
     if ('price_cents' in row) setPrice(priceToInput(row.price_cents))
     if ('desire_level' in row) setDesire(row.desire_level)
     if ('owner_id' in row) setOwnerId(row.owner_id)
+    if ('due_at' in row) setDue(toDateInput(row.due_at))
 
     if ('is_recurring' in row) {
       setRecurring(row.is_recurring)
@@ -182,6 +185,9 @@ export function ItemEditSheet() {
         title: trimmed,
         urgency,
         notes: notes.trim() || null,
+        // Clearing the field is a real choice, so an empty box means no
+        // deadline rather than "leave whatever was there".
+        due_at: due ? fromDateInput(due) : null,
         updated_by: profileId,
       })
     } else if (item.table === 'chores') {
@@ -281,6 +287,35 @@ export function ItemEditSheet() {
                     </button>
                   )
                 })}
+              </div>
+            </div>
+          )}
+
+          {table === 'todos' && (
+            <div className="flex flex-col gap-2">
+              <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                Deadline
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={due}
+                  onChange={(e) => setDue(e.target.value)}
+                  className="min-w-0 flex-1 rounded-xl px-3.5 py-3 text-[15px] outline-none"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                />
+                {due && (
+                  <button
+                    onClick={() => {
+                      fire('tap')
+                      setDue('')
+                    }}
+                    className="rounded-xl px-3 text-[13px]"
+                    style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
             </div>
           )}
