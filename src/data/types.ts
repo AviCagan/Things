@@ -136,6 +136,12 @@ export interface HouseholdSettings {
   calendar_token: string | null
   /** Minutes before a chore is due that the calendar should remind you. 0 = never. */
   calendar_alarm_minutes: number
+  /**
+   * Secret in the voice-add URL (Siri / Google). null means voice adding is
+   * off and the Edge Function refuses every request. Separate from
+   * calendar_token so revoking one doesn't revoke the other.
+   */
+  voice_token: string | null
   updated_at: string
 }
 

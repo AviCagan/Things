@@ -10,6 +10,7 @@ import { SortBar, compareBy } from '@/components/shell/SortBar'
 import { fire } from '@/lib/haptics'
 import { formatPrice } from '@/lib/money'
 import { domainOf } from '@/lib/unfurl'
+import { openExternal } from '@/routing/deeplink'
 import { StoresSheet } from './StoresSheet'
 import { TripSheet } from './TripSheet'
 import type { ShoppingItem, Store } from '@/data/types'
@@ -80,11 +81,15 @@ export function ShoppingTab() {
                 openSheet({ kind: 'trip' })
               }}
               disabled={routableCount === 0}
-              className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+              aria-label="Plan a shopping trip"
+              /* Just "Trip": the header also carries the stores button and the
+                 bell/settings rail, and the full label pushed the tab title
+                 into an ellipsis on a phone-width screen. */
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
               style={{ background: 'var(--accent)' }}
             >
               <Icon name="route" size={15} strokeWidth={2.4} />
-              Plan trip
+              Trip
             </button>
           </div>
         }
@@ -100,7 +105,7 @@ export function ShoppingTab() {
           <EmptyState
             icon={<Icon name="cart" size={44} strokeWidth={1.5} />}
             title="Nothing to buy"
-            hint="Add items below and tag them with a store. Then hit Plan trip and we'll work out the driving order."
+            hint="Add items below and tag them with a store. Then hit Trip and we'll work out the driving order."
           />
         ) : (
           <div className="flex flex-col">
@@ -273,6 +278,18 @@ function StoreGroup({
                   claimedBy={item.claimed_by}
                   profiles={profiles}
                   meta={<ShoppingItemMeta item={item} />}
+                  // Tapping an online item opens the thing itself — its own
+                  // product link if it has one, otherwise the shop's site.
+                  // An https link hands off to the retailer's app when it's
+                  // installed, so this is "open the app" on a real phone.
+                  onTap={
+                    item.url || store.url
+                      ? () => {
+                          fire('tap')
+                          openExternal(item.url ?? store.url!)
+                        }
+                      : undefined
+                  }
                   onComplete={() => dataActions.toggleShoppingItem(item)}
                   onClaim={() =>
                     profileId &&

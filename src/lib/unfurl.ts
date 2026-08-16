@@ -20,6 +20,28 @@ export interface LinkPreview {
 
 export const isUrl = (s: string): boolean => /^https?:\/\/\S+$/i.test(s.trim())
 
+/**
+ * Accept what someone would actually type into a "website" field.
+ *
+ * "amazon.com" is what you say out loud, but `window.open` treats a
+ * scheme-less string as a relative path and navigates inside the app instead
+ * of out to the shop. Returns null for anything that isn't plausibly a domain,
+ * so a blank or junk field stores nothing rather than a broken link.
+ */
+export function normalizeUrl(input: string): string | null {
+  const raw = input.trim()
+  if (!raw) return null
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+  try {
+    const url = new URL(withScheme)
+    // A bare word like "amazon" parses fine but isn't a reachable host.
+    if (!url.hostname.includes('.')) return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
 /** "https://www.amazon.com/dp/x" → "amazon.com" */
 export function domainOf(url: string): string {
   try {

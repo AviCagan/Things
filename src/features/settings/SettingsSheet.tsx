@@ -8,6 +8,8 @@ import { fire, ALL_HAPTIC_EVENTS, hasRealHaptics } from '@/lib/haptics'
 import { unlockAudio } from '@/lib/sound'
 import { isIOS, isNative } from '@/lib/platform'
 import { enablePush, pushState, type PushState } from '@/lib/notifications'
+import { runPushDiagnostics, sendTestPush, type Check } from '@/lib/pushDiagnostics'
+import { newVoiceToken, voiceUrl, VOICE_LISTS } from '@/lib/voice'
 import { fileToAvatarDataUrl, dataUrlBytes } from '@/lib/image'
 import { AddressInput } from '@/components/primitives/AddressInput'
 import { ColorPicker } from '@/components/primitives/ColorPicker'
@@ -378,6 +380,8 @@ export function SettingsSheet() {
 
         <CalendarGroup household={household} />
 
+        <VoiceGroup household={household} profileSlug={profile.slug} />
+
         <NotificationsGroup profileId={id} settings={settings} onSet={set} />
 
         <Group label="Help">
@@ -615,6 +619,115 @@ const NOTIFY_EVENTS: { key: NotifyEvent; label: string; hint: string }[] = [
   { key: 'item_edited', label: 'Edits', hint: 'When someone changes an item you can see' },
 ]
 
+/**
+ * "Hey Siri, add milk" — and the Google equivalent.
+ *
+ * Neither assistant can talk to an app like this directly. Apple's App Intents
+ * need a native App Store app, and Google Home routines can't make arbitrary
+ * HTTP calls; what both *can* do is fetch a URL, so that's the integration
+ * point. One tap copies a per-list URL to paste into Shortcuts or IFTTT.
+ */
+function VoiceGroup({
+  household,
+  profileSlug,
+}: {
+  household: HouseholdSettings | undefined
+  profileSlug: string
+}) {
+  const [copied, setCopied] = useState<string | null>(null)
+  const token = household?.voice_token ?? null
+
+  const patch = (p: Partial<HouseholdSettings>) =>
+    void dataActions.patchRow('household_settings', 'singleton', p)
+
+  if (!isConfigured()) return null
+
+  return (
+    <Group label="Voice">
+      <Toggle
+        label="Add things by voice"
+        hint="Works with Siri Shortcuts and Google Assistant"
+        value={token != null}
+        onChange={(on) => patch({ voice_token: on ? newVoiceToken() : null })}
+      />
+
+      {token && (
+        <>
+          <div className="flex flex-col gap-1.5">
+            {VOICE_LISTS.map((l) => {
+              const url = voiceUrl(token, l.list, profileSlug)
+              const isCopied = copied === l.list
+              return (
+                <button
+                  key={l.list}
+                  onClick={async () => {
+                    try {
+                      await copyToClipboard(url)
+                      fire('success')
+                      setCopied(l.list)
+                      setTimeout(() => setCopied(null), 1600)
+                    } catch {
+                      fire('warning')
+                      toast.error("Couldn't copy")
+                    }
+                  }}
+                  className="flex items-center justify-between rounded-2xl px-4 py-3"
+                  style={{ background: 'var(--surface-2)' }}
+                >
+                  <span className="text-[14px]">Copy “{l.label}” link</span>
+                  <span
+                    className="text-[12px] font-semibold"
+                    style={{ color: isCopied ? 'var(--ok)' : 'var(--accent-text)' }}
+                  >
+                    {isCopied ? 'Copied' : 'Copy'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div
+            className="flex flex-col gap-2 rounded-2xl px-4 py-3.5 text-[12px] leading-relaxed"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}
+          >
+            <p>
+              <strong style={{ color: 'var(--text)' }}>iPhone (Siri).</strong> Shortcuts
+              app → new shortcut → “Get Contents of URL” → paste a link above →
+              replace <code>TEXT</code> with the Ask&nbsp;for&nbsp;Input variable.
+              Name it “Add to shopping” and that becomes the phrase Siri listens for.
+            </p>
+            <p>
+              <strong style={{ color: 'var(--text)' }}>Google / Gemini.</strong> Google
+              Home routines can't call a URL, so route it through an IFTTT applet:
+              trigger “Say a phrase with a text ingredient”, action “Webhooks — make a
+              web request”, paste a link and put <code>{'{{TextField}}'}</code> where{' '}
+              <code>TEXT</code> is.
+            </p>
+            <p>
+              Anything added this way is credited to you. Turning this off revokes
+              every shortcut immediately.
+            </p>
+          </div>
+
+          <button
+            onClick={() => {
+              fire('warning')
+              patch({ voice_token: newVoiceToken() })
+              toast.success('New links generated', {
+                description: 'Re-copy them into your shortcuts.',
+              })
+            }}
+            className="rounded-2xl px-4 py-3 text-left text-[13px]"
+            style={{ background: 'var(--surface-2)', color: 'var(--danger)' }}
+          >
+            Regenerate links
+          </button>
+        </>
+      )}
+    </Group>
+  )
+}
+
 function NotificationsGroup({
   profileId,
   settings,
@@ -750,7 +863,120 @@ function NotificationsGroup({
           one notification per item.
         </p>
       )}
+
+      <PushDiagnostics profileId={profileId} />
     </Group>
+  )
+}
+
+/**
+ * Reads the actual state of this device rather than inferring it from the
+ * other end. Every notification bug in this app so far has been invisible
+ * from the sending side and obvious from here.
+ */
+function PushDiagnostics({ profileId }: { profileId: string }) {
+  const [checks, setChecks] = useState<Check[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [testing, setTesting] = useState(false)
+
+  async function run() {
+    setBusy(true)
+    fire('tap')
+    try {
+      setChecks(await runPushDiagnostics(profileId))
+    } catch (err) {
+      console.error('[push] diagnostics failed', err)
+      toast.error("Couldn't run the check")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function test() {
+    setTesting(true)
+    fire('tap')
+    try {
+      const { sent } = await sendTestPush(profileId)
+      if (sent > 0) {
+        fire('success')
+        toast.success(`Sent to ${sent} device${sent === 1 ? '' : 's'}`, {
+          description: 'It should arrive in a few seconds.',
+        })
+      } else {
+        fire('warning')
+        toast.error('Nothing to send to', {
+          description: 'No device is registered for you. Run the check above.',
+        })
+      }
+    } catch (err) {
+      fire('warning')
+      toast.error("Couldn't send", {
+        description: err instanceof Error ? err.message : undefined,
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const COLOR: Record<Check['status'], string> = {
+    ok: 'var(--ok)',
+    warn: 'var(--warn)',
+    bad: 'var(--danger)',
+  }
+
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      <div className="flex gap-2">
+        <button
+          onClick={() => void run()}
+          disabled={busy}
+          className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold"
+          style={{ background: 'var(--surface-3)', color: 'var(--text)' }}
+        >
+          {busy ? 'Checking…' : 'Why am I not getting notifications?'}
+        </button>
+        <button
+          onClick={() => void test()}
+          disabled={testing}
+          className="rounded-xl px-3 py-2.5 text-[13px] font-semibold"
+          style={{ background: 'var(--surface-3)', color: 'var(--text)' }}
+        >
+          {testing ? 'Sending…' : 'Test'}
+        </button>
+      </div>
+
+      {checks && (
+        <div
+          className="flex flex-col gap-2.5 rounded-2xl p-3.5"
+          style={{ background: 'var(--surface-3)' }}
+        >
+          {checks.map((c) => (
+            <div key={c.label} className="flex items-start gap-2.5">
+              <span
+                className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                style={{ background: COLOR[c.status] }}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-[13px] font-semibold">{c.label}</span>
+                  <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
+                    {c.detail}
+                  </span>
+                </div>
+                {c.fix && (
+                  <p
+                    className="mt-0.5 text-[12px] leading-relaxed"
+                    style={{ color: COLOR[c.status] }}
+                  >
+                    {c.fix}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

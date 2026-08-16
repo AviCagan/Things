@@ -141,6 +141,8 @@ export async function ensureSeeded(): Promise<void> {
       // Calendar sync is opt-in: no token means no feed to leak.
       calendar_token: null,
       calendar_alarm_minutes: 0,
+      // Same posture for voice adding — off until someone turns it on.
+      voice_token: null,
       updated_at: nowIso(),
     }
     await adapter.insert('household_settings', h)

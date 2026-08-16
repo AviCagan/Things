@@ -55,6 +55,7 @@ jobs:
           supabase functions deploy calendar --project-ref "$PROJECT_REF" --no-verify-jwt
           supabase functions deploy unfurl   --project-ref "$PROJECT_REF" --no-verify-jwt
           supabase functions deploy notify   --project-ref "$PROJECT_REF" --no-verify-jwt
+          supabase functions deploy add      --project-ref "$PROJECT_REF" --no-verify-jwt
 
       # Only the sender needs secrets, and only once they exist. Skipping this
       # leaves the other two functions perfectly usable.

@@ -15,7 +15,7 @@ import { WishlistTab } from './features/wishlist/WishlistTab'
 import { WishAddBar } from './features/wishlist/WishAddBar'
 import { SettingsSheet } from './features/settings/SettingsSheet'
 import { ItemEditSheet } from './features/items/ItemEditSheet'
-import { ActivityBell } from './features/activity/ActivityBell'
+import { ActivityBell, ActivitySheet } from './features/activity/ActivityBell'
 import { PinGate } from './components/shell/PinGate'
 import { Tour, tourSeen } from './components/shell/Tour'
 import { useData, dataActions } from './store/useData'
@@ -257,6 +257,10 @@ export default function App() {
       <TabDock />
       <SettingsSheet />
       <ItemEditSheet />
+      {/* Mounted here, not inside the header rail: the rail is an absolutely
+          positioned z-40 element, which establishes a stacking context that
+          would pin this sheet below the quick-add bar and the dock. */}
+      <ActivitySheet />
       <Tour />
       <PulseLayer />
       <Toaster

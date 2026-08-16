@@ -28,6 +28,14 @@ interface UIState {
   highlightId: string | null
   /** The walkthrough. Shown once per person per device, replayable from Settings. */
   tour: boolean
+  /**
+   * Newest activity entry this person has seen, ISO. Lives here rather than in
+   * ActivityBell because the badge and the sheet are mounted in two different
+   * places — the sheet has to escape the header rail's stacking context, so
+   * they can't share component state.
+   */
+  activitySeenAt: string | null
+  setActivitySeenAt: (iso: string | null) => void
   // Wishlist view state lives here so it survives switching tabs.
   wishSort: WishSort
   wishDesc: boolean
@@ -63,6 +71,8 @@ export const useUI = create<UIState>((set) => ({
     wishlist: 'desire',
   },
   sortDesc: { todos: true, chores: true, shopping: true, wishlist: true },
+  activitySeenAt: null,
+  setActivitySeenAt: (activitySeenAt) => set({ activitySeenAt }),
   setTab: (tab) => set({ tab }),
   openSheet: (sheet) => set({ sheet }),
   closeSheet: () => set({ sheet: { kind: 'none' } }),

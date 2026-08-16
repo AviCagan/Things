@@ -61,6 +61,9 @@ create table if not exists household_settings (
   calendar_token text,
   -- Minutes of warning the calendar gives before a chore is due. 0 = none.
   calendar_alarm_minutes integer not null default 0,
+  -- Secret in the voice-add URL (Siri / Google). null = voice adding off.
+  -- Separate from calendar_token so revoking one doesn't revoke the other.
+  voice_token text,
   updated_at   timestamptz not null default now()
 );
 

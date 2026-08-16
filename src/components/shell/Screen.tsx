@@ -20,11 +20,16 @@ export function Screen({
 }) {
   return (
     <div className="flex h-full flex-col">
-      {/* pr-14 reserves the lane occupied by the floating settings button, so
-          per-tab actions can never slide underneath it. */}
-      <header className="shrink-0 pb-2 pl-5 pr-14 pt-3 safe-top">
+      {/* Reserves the lane occupied by the floating header rail so per-tab
+          actions can never slide underneath it. The rail is two 36px buttons
+          with an 8px gap, 16px from the right edge — 96px — plus a little
+          breathing room. It was sized for one button, which is why the bell
+          landed on top of Shopping's Plan trip button. */}
+      <header className="shrink-0 pb-2 pl-5 pr-[104px] pt-3 safe-top">
         <div className="flex items-end justify-between gap-3">
-          <h1 className="text-[27px] font-bold tracking-tight">
+          {/* min-w-0 so a long action keeps its own width and squeezes the
+              title instead of wrapping itself onto two lines. */}
+          <h1 className="min-w-0 truncate text-[27px] font-bold tracking-tight">
             {title}
             {count !== undefined && count > 0 && (
               <span className="ml-2 text-[16px] font-semibold" style={{ color: 'var(--text-faint)' }}>

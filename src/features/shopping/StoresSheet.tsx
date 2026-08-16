@@ -7,6 +7,8 @@ import { fire } from '@/lib/haptics'
 import { AddressInput } from '@/components/primitives/AddressInput'
 import { ColorPicker } from '@/components/primitives/ColorPicker'
 import { ColorSwatchButton } from '@/components/primitives/ColorSwatchButton'
+import { normalizeUrl, domainOf } from '@/lib/unfurl'
+import { openExternal } from '@/routing/deeplink'
 import type { Store } from '@/data/types'
 
 const PALETTE = [
@@ -28,6 +30,7 @@ export function StoresSheet() {
   const [name, setName] = useState('')
   const [isOnline, setIsOnline] = useState(false)
   const [address, setAddress] = useState('')
+  const [url, setUrl] = useState('')
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [color, setColor] = useState(PALETTE[0])
   const [wheelOpen, setWheelOpen] = useState(false)
@@ -37,7 +40,7 @@ export function StoresSheet() {
     await dataActions.addStore({
       name: name.trim(),
       is_online: isOnline,
-      url: null,
+      url: isOnline ? normalizeUrl(url) : null,
       // A DB constraint also forbids coordinates on online stores, so an
       // online shop can never leak into a driving route.
       address: isOnline ? null : address.trim() || null,
@@ -52,6 +55,7 @@ export function StoresSheet() {
     })
     setName('')
     setAddress('')
+    setUrl('')
     setCoords(null)
     setIsOnline(false)
     setWheelOpen(false)
@@ -110,6 +114,22 @@ export function StoresSheet() {
               }}
               onPick={(place) => setCoords({ lat: place.lat, lng: place.lng })}
               placeholder="Address (optional — used for trip planning)"
+            />
+          )}
+
+          {/* An online store's "address" is its website. Tapping an item filed
+              under it opens this, and on a phone an https link hands off to
+              the shop's own app when it's installed. */}
+          {isOnline && (
+            <input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Website (optional — e.g. amazon.com)"
+              inputMode="url"
+              autoCapitalize="off"
+              autoCorrect="off"
+              className="rounded-xl px-3 py-2.5 text-[14px] outline-none"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
             />
           )}
 
@@ -187,6 +207,7 @@ function StoreRow({ store }: { store: Store }) {
   // every item filed under it.
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState(store.name)
+  const [url, setUrl] = useState(store.url ?? '')
 
   function saveName() {
     const next = name.trim()
@@ -196,6 +217,17 @@ function StoreRow({ store }: { store: Store }) {
       return
     }
     void dataActions.patchRow('stores', store.id, { name: next })
+    fire('success')
+  }
+
+  async function saveUrl() {
+    const next = normalizeUrl(url)
+    await dataActions.patchRow('stores', store.id, { url: next })
+    // Reflect what was actually stored — "amazon.com" comes back as a full
+    // URL, and a value that couldn't be parsed comes back empty rather than
+    // sitting in the box looking saved.
+    setUrl(next ?? '')
+    setEditing(false)
     fire('success')
   }
 
@@ -251,13 +283,14 @@ function StoreRow({ store }: { store: Store }) {
           </button>
         )}
         {store.is_online ? (
-          <span
+          <button
+            onClick={() => setEditing((e) => !e)}
             className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px]"
             style={{ background: 'var(--surface-3)', color: 'var(--text-dim)' }}
           >
             <Icon name="globe" size={11} strokeWidth={2.4} />
-            Online
-          </span>
+            {store.url ? 'Edit link' : 'Add link'}
+          </button>
         ) : (
           <button
             onClick={() => setEditing((e) => !e)}
@@ -283,23 +316,55 @@ function StoreRow({ store }: { store: Store }) {
         </p>
       )}
 
+      {store.is_online && store.url && !editing && (
+        <button
+          onClick={() => {
+            fire('tap')
+            openExternal(store.url!)
+          }}
+          className="flex items-center gap-1 self-start pl-6 text-[12px]"
+          style={{ color: 'var(--accent-text)' }}
+        >
+          <Icon name="link" size={11} strokeWidth={2.4} />
+          {domainOf(store.url)}
+        </button>
+      )}
+
       {editing && (
         <div className="flex gap-2">
           <div className="flex-1">
-            <AddressInput
-              value={address}
-              onChange={(v) => {
-                setAddress(v)
-                setPicked(null)
-              }}
-              onPick={(place) => setPicked({ lat: place.lat, lng: place.lng })}
-              placeholder="Street, city"
-              className="w-full rounded-xl px-3 py-2 text-[13px] outline-none"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-            />
+            {store.is_online ? (
+              <input
+                autoFocus
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="amazon.com"
+                inputMode="url"
+                autoCapitalize="off"
+                autoCorrect="off"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void saveUrl()
+                }}
+                enterKeyHint="done"
+                className="w-full rounded-xl px-3 py-2 text-[13px] outline-none"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              />
+            ) : (
+              <AddressInput
+                value={address}
+                onChange={(v) => {
+                  setAddress(v)
+                  setPicked(null)
+                }}
+                onPick={(place) => setPicked({ lat: place.lat, lng: place.lng })}
+                placeholder="Street, city"
+                className="w-full rounded-xl px-3 py-2 text-[13px] outline-none"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              />
+            )}
           </div>
           <button
-            onClick={saveAddress}
+            onClick={() => void (store.is_online ? saveUrl() : saveAddress())}
             className="rounded-xl px-3 text-[13px] font-semibold text-white"
             style={{ background: 'var(--accent)' }}
           >

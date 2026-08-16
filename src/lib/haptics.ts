@@ -88,7 +88,7 @@ export function setFeedbackSinks(opts: {
 
 // --- backend resolution -----------------------------------------------------
 
-type Backend = 'native' | 'vibrate' | 'none'
+type Backend = 'native' | 'vibrate' | 'ios-switch' | 'none'
 
 let backend: Backend | null = null
 let vibrateProbed = false
@@ -96,11 +96,90 @@ let vibrateProbed = false
 function resolveBackend(): Backend {
   if (backend) return backend
   if (isNative()) backend = 'native'
-  // iOS has no vibration API in any browser. No polyfill exists.
   else if (!isIOS() && typeof navigator !== 'undefined' && 'vibrate' in navigator)
     backend = 'vibrate'
+  // iOS has never shipped the Vibration API, but Safari 17.4's switch control
+  // plays a real system haptic when it toggles — see fireIosSwitch below.
+  else if (iosSwitchSupported()) backend = 'ios-switch'
   else backend = 'none'
   return backend
+}
+
+// --- the iOS switch haptic --------------------------------------------------
+
+/*
+  iOS has no Vibration API and no polyfill for one, which is why this app shipped
+  with "iOS gets visual and audio only". That is no longer the whole story.
+
+  Safari 17.4 added `<input type="checkbox" switch>`, and toggling it plays a
+  genuine system haptic. Clicking the input from script does nothing — WebKit
+  ignores it — but clicking an associated <label> propagates through and the
+  haptic fires. So one hidden switch plus one hidden label gives arbitrary
+  programmatic haptics on iOS, which is exactly what was missing.
+
+  Caveats, stated plainly because this is undocumented behaviour and not an API:
+  it needs iOS 17.4+, it is one fixed sensation with no intensity control (we
+  approximate stronger events by pulsing more than once), and Apple changed the
+  behaviour in iOS 26.5 so on the newest builds it may do nothing. It degrades
+  to the visual/audio channel exactly as before, so the worst case is today's
+  behaviour rather than a regression.
+*/
+
+const IOS_SWITCH_ID = 'things-haptic-switch'
+/** Comfortably longer than the switch animation, so pulses read as separate. */
+const IOS_PULSE_GAP_MS = 70
+
+let iosSwitchLabel: HTMLLabelElement | null = null
+
+function iosSwitchSupported(): boolean {
+  if (!isIOS() || typeof document === 'undefined') return false
+  // Safari reflects the switch attribute as a property once it supports it.
+  return 'switch' in document.createElement('input')
+}
+
+function ensureIosSwitch(): HTMLLabelElement | null {
+  if (iosSwitchLabel) return iosSwitchLabel
+  if (typeof document === 'undefined' || !document.body) return null
+
+  const input = document.createElement('input')
+  input.type = 'checkbox'
+  input.setAttribute('switch', '')
+  input.id = IOS_SWITCH_ID
+  input.tabIndex = -1
+
+  const label = document.createElement('label')
+  label.htmlFor = IOS_SWITCH_ID
+
+  // Kept rendered rather than `display:none` or `visibility:hidden` — a switch
+  // that isn't laid out doesn't animate, and no animation means no haptic.
+  const host = document.createElement('div')
+  host.setAttribute('aria-hidden', 'true')
+  host.style.cssText =
+    'position:fixed;bottom:0;left:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;z-index:-1;'
+  host.append(input, label)
+  document.body.appendChild(host)
+
+  iosSwitchLabel = label
+  return label
+}
+
+/**
+ * One tap of the hidden switch per pulse. `pulses` stands in for intensity,
+ * since the sensation itself is fixed.
+ */
+function fireIosSwitch(pulses: number): void {
+  const label = ensureIosSwitch()
+  if (!label) return
+  for (let i = 0; i < pulses; i++) {
+    if (i === 0) label.click()
+    else setTimeout(() => label.click(), i * IOS_PULSE_GAP_MS)
+  }
+}
+
+/** Patterns already encode weight as their number of bursts; reuse that. */
+function pulseCount(pattern: number | number[], factor: number): number {
+  const base = typeof pattern === 'number' ? 1 : Math.min(3, pattern.length)
+  return factor > 1 ? Math.min(4, base + 1) : factor < 1 ? 1 : base
 }
 
 /**
@@ -162,6 +241,9 @@ export function fire(event: HapticEventName): void {
         }
       }
       return
+    case 'ios-switch':
+      fireIosSwitch(pulseCount(spec.pattern, factor))
+      return
     case 'none':
       return
   }
@@ -203,3 +285,13 @@ export const ALL_HAPTIC_EVENTS = Object.keys(EVENTS) as HapticEventName[]
 
 /** True when this device can actually produce a haptic, for honest UI copy. */
 export const hasRealHaptics = (): boolean => resolveBackend() !== 'none'
+
+/** Which mechanism is in play — Settings says so rather than guessing. */
+export const hapticBackend = (): Backend => resolveBackend()
+
+export const HAPTIC_BACKEND_LABEL: Record<Backend, string> = {
+  native: 'Full haptics through Android',
+  vibrate: 'Vibration through the browser',
+  'ios-switch': "iOS system haptics (Apple's switch control)",
+  none: 'No haptics on this device — pulses and sound instead',
+}

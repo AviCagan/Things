@@ -212,6 +212,40 @@ Deno.serve(async (req) => {
       return Response.json({ ok: true, mode: 'sweep', sent })
     }
 
+    /*
+      Deliberately sends to the requester rather than "the other person", and
+      deliberately ignores notify_events preferences: this is the diagnostic
+      you reach for when nothing arrives, so it has to exercise the stored
+      subscription and the delivery service without any of the routing rules
+      that could quietly filter it out and make a working pipe look broken.
+    */
+    if (body.mode === 'test') {
+      const profileId = String(body.profile_id ?? '')
+      if (!profileId) {
+        return Response.json({ ok: false, error: 'profile_id required' }, { status: 400 })
+      }
+
+      const { data: subs } = await db
+        .from('push_subscriptions')
+        .select('id, platform, token, endpoint, p256dh, auth')
+        .eq('profile_id', profileId)
+
+      const push: Push = {
+        title: 'Things',
+        body: 'Test notification — this is working.',
+        tab: 'todos',
+        tag: `test-${Date.now()}`,
+      }
+
+      let sent = 0
+      for (const sub of (subs ?? []) as Subscription[]) {
+        const ok =
+          sub.platform === 'fcm' ? await sendFcm(sub, push) : await sendWebPush(sub, push)
+        if (ok) sent++
+      }
+      return Response.json({ ok: true, mode: 'test', devices: subs?.length ?? 0, sent })
+    }
+
     const classified = classify(body as WebhookBody)
     if (!classified) return Response.json({ ok: true, skipped: 'no-op' })
 

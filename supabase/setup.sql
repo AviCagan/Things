@@ -1,7 +1,7 @@
 -- Things — complete database setup, in one paste.
 --
 -- Copy this whole file into the Supabase SQL Editor and hit Run, once.
--- It is the same content as 001-004 and 006-011 run in order; those are
+-- It is the same content as 001-004 and 006-012 run in order; those are
 -- kept separate for readability, this is here so setup — and catching a
 -- database up after a feature update — is a single step.
 --
@@ -81,6 +81,9 @@ create table if not exists household_settings (
   calendar_token text,
   -- Minutes of warning the calendar gives before a chore is due. 0 = none.
   calendar_alarm_minutes integer not null default 0,
+  -- Secret in the voice-add URL (Siri / Google). null = voice adding off.
+  -- Separate from calendar_token so revoking one doesn't revoke the other.
+  voice_token text,
   updated_at   timestamptz not null default now()
 );
 
@@ -524,7 +527,7 @@ create index if not exists push_profile_idx    on push_subscriptions (profile_id
 
 
 -- ==========================================================================
--- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql, 010_fix_push_upsert.sql, 011_activity_and_edits.sql
+-- 006_avatars.sql, 007_list_settings.sql, 008_calendar.sql, 009_weekday_recurrence.sql, 010_fix_push_upsert.sql, 011_activity_and_edits.sql, 012_voice_token.sql
 -- ==========================================================================
 
 -- Things — profile photos
@@ -914,6 +917,20 @@ begin
 end $$;
 
 alter table activity_log replica identity full;
+
+
+-- Things — voice adding (Siri / Google Assistant)
+--
+-- Run once in the SQL Editor if your database predates this feature. Safe to
+-- run more than once.
+
+-- ---------------------------------------------------------------------------
+-- Secret in the voice-add URL. null means voice adding is off — the Edge
+-- Function refuses every request in that state, so this is a real off switch
+-- and not just a hidden button. Kept separate from calendar_token so
+-- regenerating one doesn't revoke the other.
+-- ---------------------------------------------------------------------------
+alter table household_settings add column if not exists voice_token text;
 
 
 -- ==========================================================================

@@ -139,9 +139,16 @@ export async function geocode(
 }
 
 export interface PlaceSuggestion extends LatLng {
-  /** One-line label for the dropdown. */
+  /**
+   * One-line label for the dropdown, name included — that's what makes two
+   * branches of the same chain tellable apart while picking.
+   */
   label: string
-  /** Full street address. */
+  /**
+   * The postal address ONLY — never prefixed with the place's name. A store's
+   * address field is shown beneath its name, so including the name here
+   * rendered as "Taster's Market — Taster's Market, 330 Bradley Avenue".
+   */
   address: string
   /**
    * Just the place's own name, e.g. "Taster's Market".
@@ -182,12 +189,15 @@ export async function searchPlaces(
       const street = [p.housenumber, p.street].filter(Boolean).join(' ')
       const locality = [p.city, p.state, p.postcode].filter(Boolean).join(', ')
       const name = p.name && p.name !== street ? p.name : null
-      const address = [name, street, locality].filter(Boolean).join(', ')
+      // Address stays name-free. The label keeps the name so the dropdown can
+      // still distinguish two branches of the same chain.
+      const address = [street, locality].filter(Boolean).join(', ')
+      const label = [name, address].filter(Boolean).join(' — ')
       return {
         lat: c[1],
         lng: c[0],
-        label: address || name || q,
-        address: address || name || q,
+        label: label || name || q,
+        address: address || '',
         name,
       }
     })
