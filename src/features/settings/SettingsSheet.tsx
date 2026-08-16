@@ -10,7 +10,7 @@ import { isIOS, isNative } from '@/lib/platform'
 import { enablePush, pushState, type PushState } from '@/lib/notifications'
 import { runPushDiagnostics, sendTestPush, type Check } from '@/lib/pushDiagnostics'
 import { newVoiceToken, voiceUrl, VOICE_LISTS } from '@/lib/voice'
-import { buildLabel } from '@/lib/build'
+import { buildLabel, nativeVersion } from '@/lib/build'
 import { fileToAvatarDataUrl, dataUrlBytes } from '@/lib/image'
 import { AddressInput } from '@/components/primitives/AddressInput'
 import { ColorPicker } from '@/components/primitives/ColorPicker'
@@ -93,6 +93,10 @@ export function SettingsSheet() {
   const [showHaptics, setShowHaptics] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
   const [accentWheel, setAccentWheel] = useState(false)
+  const [nativeVer, setNativeVer] = useState<string | null>(null)
+  useEffect(() => {
+    void nativeVersion().then(setNativeVer)
+  }, [])
 
   if (!profile || !settings) return null
   const id = profile.id
@@ -111,6 +115,9 @@ export function SettingsSheet() {
           style={{ color: 'var(--text-faint)' }}
         >
           Build {buildLabel()}
+          {/* Android's own version, not the JS bundle's — if this run number
+              doesn't match the one above, the install didn't actually take. */}
+          {nativeVer && <> · {nativeVer}</>}
         </p>
 
         <Group label={`${profile.display_name}'s look`}>
