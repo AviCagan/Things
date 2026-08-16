@@ -43,6 +43,11 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       registerType: 'autoUpdate',
+      // Registration is done by src/lib/serviceWorker.ts instead. The injected
+      // script registers unconditionally, including inside the Android APK,
+      // where a stale precache survives an APK update and serves the previous
+      // build's index.html — a new APK showing the old app with no error.
+      injectRegister: null,
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
