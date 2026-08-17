@@ -18,6 +18,12 @@ export interface ParsedCommand {
    * than part of what was said.
    */
   storeSpoken: string | null
+  /**
+   * Whoever said "...this is Avi" / "...it's Jackie" at the end of the phrase,
+   * resolved to a real profile slug. Lets one shared voice link or device be
+   * used by both people with correct attribution — see resolveWho.
+   */
+  who: string | null
 }
 
 /** Must track `URGENCY.URGENT` in src/data/types.ts. */
@@ -85,6 +91,27 @@ export function resolveStore(
   )
 }
 
+/** Case-insensitive match of a spoken name against the household's real people. */
+export function resolveWho(
+  phrase: string | null | undefined,
+  people: { slug: string; name: string }[],
+): string | null {
+  if (!phrase) return null
+  const want = norm(phrase)
+  if (!want) return null
+  const hit = people.find((p) => norm(p.slug) === want || norm(p.name) === want)
+  return hit ? hit.slug : null
+}
+
+/**
+ * The spoken sign-off a shared device or shared IFTTT applet relies on:
+ * "...this is Avi", "...it's Jackie", "...I'm Avi". Always the very last
+ * thing said, so it's stripped before any other clause extraction runs —
+ * otherwise "milk at Costco, this is Avi" leaves "this is Avi" dangling off
+ * the store name and neither resolves.
+ */
+const WHO_TRAILING = /\s*,?\s*(?:this is|it'?s|i'?m|i am)\s+([a-z]+)\s*$/i
+
 const CONNECTOR = /\s+(?:to|at|in|on|from)\s+(?:the\s+|my\s+|our\s+)?/gi
 
 /**
@@ -130,6 +157,7 @@ export function parseCommand(
   listHint?: string | null,
   storeHint?: string | null,
   storeNames: string[] = [],
+  people: { slug: string; name: string }[] = [],
 ): ParsedCommand | null {
   let body = (text ?? '').trim()
   if (!body) return null
@@ -138,6 +166,16 @@ export function parseCommand(
 
   let list = resolveList(listHint)
   let store = resolveStore(storeHint, storeNames)
+
+  let who: string | null = null
+  const whoMatch = body.match(WHO_TRAILING)
+  if (whoMatch) {
+    const resolved = resolveWho(whoMatch[1], people)
+    if (resolved) {
+      who = resolved
+      body = body.slice(0, whoMatch.index).trim()
+    }
+  }
 
   /*
     Strip up to two trailing clauses, so "milk at Costco to shopping" and
@@ -207,5 +245,6 @@ export function parseCommand(
     // so don't claim one was understood.
     store: list === 'shopping_items' ? store : null,
     storeSpoken,
+    who,
   }
 }

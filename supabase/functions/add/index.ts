@@ -137,11 +137,18 @@ Deno.serve(async (req) => {
     const { data: storeRows } = await db.from('stores').select('id, name, is_online')
     const stores = (storeRows ?? []) as { id: string; name: string; is_online: boolean }[]
 
+    // Both people, so a spoken "...this is Avi" sign-off on a shared device or
+    // shared IFTTT applet can be attributed without the shortcut being scoped
+    // to one person's own link.
+    const { data: profileRows } = await db.from('profiles').select('id, slug, display_name')
+    const profiles = (profileRows ?? []) as { id: string; slug: string; display_name: string }[]
+
     const parsed = parseCommand(
       text,
       param('list'),
       param('store'),
       stores.map((s) => s.name),
+      profiles.map((p) => ({ slug: p.slug, name: p.display_name })),
     )
     if (!parsed) return json({ ok: false, error: 'nothing to add' }, 400)
 
@@ -181,18 +188,14 @@ Deno.serve(async (req) => {
     const repeat =
       parsed.list === 'chores' ? parseRecurrence(param('every') ?? param('repeat') ?? '') : null
 
-    // Attribute to a named person when one is given, so the activity log and
-    // the scoreboard stay honest about who asked for it.
-    const who = param('who')
-    let profileId: string | null = null
-    if (who) {
-      const { data: profile } = await db
-        .from('profiles')
-        .select('id')
-        .eq('slug', who.trim().toLowerCase())
-        .maybeSingle()
-      profileId = profile?.id ?? null
-    }
+    // Attribute to a named person, so the activity log and the scoreboard stay
+    // honest about who asked for it. An explicit `who` param — how a link
+    // generated for one person in Settings works — always wins; a shared
+    // link or device falls back to whatever name was spoken in the phrase
+    // itself.
+    const whoParam = param('who')
+    const whoSlug = whoParam ? whoParam.trim().toLowerCase() : parsed.who
+    const profileId = whoSlug ? (profiles.find((p) => p.slug === whoSlug)?.id ?? null) : null
 
     const { error } = await db
       .from(parsed.list)

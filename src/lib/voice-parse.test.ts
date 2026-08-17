@@ -3,6 +3,7 @@ import {
   parseCommand,
   resolveList,
   resolveStore,
+  resolveWho,
   URGENT_LEVEL,
 } from '../../supabase/functions/add/parse'
 import { URGENCY } from '@/data/types'
@@ -50,6 +51,7 @@ describe('parseCommand', () => {
       urgency: 1,
       store: null,
       storeSpoken: null,
+      who: null,
     })
   })
 
@@ -177,5 +179,60 @@ describe('parseCommand: stores', () => {
     const c = parseCommand('add milk at Costco', 'shopping', null, stores)
     expect(c?.store).toBe('Costco')
     expect(c?.storeSpoken).toBeNull()
+  })
+})
+
+describe('resolveWho', () => {
+  const people = [
+    { slug: 'avi', name: 'Avi' },
+    { slug: 'jackie', name: 'Jackie' },
+  ]
+
+  it('matches by slug or display name, case-insensitively', () => {
+    expect(resolveWho('avi', people)).toBe('avi')
+    expect(resolveWho('Jackie', people)).toBe('jackie')
+    expect(resolveWho('JACKIE', people)).toBe('jackie')
+  })
+
+  it('returns null for anyone not in the household', () => {
+    expect(resolveWho('Sam', people)).toBeNull()
+    expect(resolveWho('', people)).toBeNull()
+    expect(resolveWho(null, people)).toBeNull()
+  })
+})
+
+describe('parseCommand: who', () => {
+  const people = [
+    { slug: 'avi', name: 'Avi' },
+    { slug: 'jackie', name: 'Jackie' },
+  ]
+
+  it('reads a spoken sign-off and attributes it', () => {
+    expect(parseCommand('add milk, this is Avi', 'shopping', null, [], people)?.who).toBe('avi')
+    expect(parseCommand("call the plumber it's Jackie", 'todos', null, [], people)?.who).toBe(
+      'jackie',
+    )
+    expect(parseCommand("water the plants I'm Avi", 'todos', null, [], people)?.who).toBe('avi')
+  })
+
+  it('strips the sign-off out of the title', () => {
+    const c = parseCommand('add milk, this is Avi', 'shopping', null, [], people)
+    expect(c?.title).toBe('Milk')
+  })
+
+  it('leaves the words alone when the name is not one of ours', () => {
+    const c = parseCommand("tell Sam I'm running late", 'todos', null, [], people)
+    expect(c?.who).toBeNull()
+    expect(c?.title).toBe("Tell Sam I'm running late")
+  })
+
+  it('is unattributed when no sign-off was said', () => {
+    expect(parseCommand('milk', 'shopping', null, [], people)?.who).toBeNull()
+  })
+
+  it('resolves the store and the sign-off together, in either order', () => {
+    const stores = ['Costco']
+    const a = parseCommand('add milk at Costco, this is Avi', null, null, stores, people)
+    expect([a?.store, a?.who, a?.title]).toEqual(['Costco', 'avi', 'Milk'])
   })
 })
