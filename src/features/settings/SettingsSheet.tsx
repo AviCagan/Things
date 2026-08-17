@@ -672,6 +672,7 @@ function VoiceGroup({
   profileSlug: string
 }) {
   const [copied, setCopied] = useState<string | null>(null)
+  const [showShared, setShowShared] = useState(false)
   const token = household?.voice_token ?? null
   const stores = useData((s) => s.stores)
 
@@ -703,7 +704,25 @@ function VoiceGroup({
       })),
   ]
 
+  /*
+    Same links, minus the `who` param — for a shortcut or IFTTT applet neither
+    of you owns personally, like one shared Google Home device. Nothing in the
+    URL says whose it is, so the endpoint falls back to whatever name is
+    spoken: end the phrase with "...this is Avi" or "...this is Jackie" and
+    it's credited correctly either way, from either phone or a shared device.
+  */
+  const sharedLinks = VOICE_LISTS.map((l) => ({
+    key: `shared:${l.list}`,
+    label: l.label,
+    url: voiceUrl(token, l.list),
+  }))
+
   if (!isConfigured()) return null
+
+  const copyLink = (key: string) => {
+    setCopied(key)
+    setTimeout(() => setCopied((c) => (c === key ? null : c)), 1600)
+  }
 
   return (
     <Group label="Voice">
@@ -717,35 +736,14 @@ function VoiceGroup({
       {token && (
         <>
           <div className="flex flex-col gap-1.5">
-            {links.map((l) => {
-              const isCopied = copied === l.key
-              return (
-                <button
-                  key={l.key}
-                  onClick={async () => {
-                    try {
-                      await copyToClipboard(l.url)
-                      fire('success')
-                      setCopied(l.key)
-                      setTimeout(() => setCopied(null), 1600)
-                    } catch {
-                      fire('warning')
-                      toast.error("Couldn't copy")
-                    }
-                  }}
-                  className="flex items-center justify-between rounded-2xl px-4 py-3"
-                  style={{ background: 'var(--surface-2)' }}
-                >
-                  <span className="text-[14px]">Copy “{l.label}” link</span>
-                  <span
-                    className="text-[12px] font-semibold"
-                    style={{ color: isCopied ? 'var(--ok)' : 'var(--accent-text)' }}
-                  >
-                    {isCopied ? 'Copied' : 'Copy'}
-                  </span>
-                </button>
-              )
-            })}
+            {links.map((l) => (
+              <VoiceLinkRow
+                key={l.key}
+                link={l}
+                copied={copied === l.key}
+                onCopy={() => copyLink(l.key)}
+              />
+            ))}
           </div>
 
           <div
@@ -777,6 +775,44 @@ function VoiceGroup({
 
           <button
             onClick={() => {
+              fire('tap')
+              setShowShared((v) => !v)
+            }}
+            className="flex items-center justify-between rounded-2xl px-4 py-3.5"
+            style={{ background: 'var(--surface-2)' }}
+          >
+            <span className="text-[14px]">Shared link, for a device you both use</span>
+            <Icon name="chevron" size={15} />
+          </button>
+
+          {showShared && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                {sharedLinks.map((l) => (
+                  <VoiceLinkRow
+                    key={l.key}
+                    link={l}
+                    copied={copied === l.key}
+                    onCopy={() => setCopied(l.key)}
+                  />
+                ))}
+              </div>
+              <p
+                className="rounded-2xl px-4 py-3.5 text-[12px] leading-relaxed"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}
+              >
+                These leave out whose they are, so a Google Home device or an
+                IFTTT applet you both trigger — say, a shared Gemini — still
+                credits the right person. End the phrase with your name:
+                “add milk to shopping, this is Avi” or “...this is Jackie.”
+                Set them up the same way as above, just pasting one of these
+                links instead.
+              </p>
+            </>
+          )}
+
+          <button
+            onClick={() => {
               fire('warning')
               patch({ voice_token: newVoiceToken() })
               toast.success('New links generated', {
@@ -791,6 +827,41 @@ function VoiceGroup({
         </>
       )}
     </Group>
+  )
+}
+
+function VoiceLinkRow({
+  link,
+  copied,
+  onCopy,
+}: {
+  link: { key: string; label: string; url: string }
+  copied: boolean
+  onCopy: () => void
+}) {
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await copyToClipboard(link.url)
+          fire('success')
+          onCopy()
+        } catch {
+          fire('warning')
+          toast.error("Couldn't copy")
+        }
+      }}
+      className="flex items-center justify-between rounded-2xl px-4 py-3"
+      style={{ background: 'var(--surface-2)' }}
+    >
+      <span className="text-[14px]">Copy “{link.label}” link</span>
+      <span
+        className="text-[12px] font-semibold"
+        style={{ color: copied ? 'var(--ok)' : 'var(--accent-text)' }}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </span>
+    </button>
   )
 }
 
